@@ -1,6 +1,7 @@
 #include "schema.h"
 
 #include <stdexcept>
+#include <utility>
 
 namespace vql::algebra {
 
@@ -37,6 +38,64 @@ std::size_t Type::max_length() const {
   }
 
   return max_length_;
+}
+
+Schema::Schema(std::vector<Column> columns) : columns_(std::move(columns)) {}
+
+std::size_t Schema::size() const { return columns_.size(); }
+
+const Column &Schema::operator[](std::size_t i) const {
+  if (i >= columns_.size())
+    throw std::runtime_error("Access out of bounds to {" + std::to_string(i) +
+                             "} to schema of size " +
+                             std::to_string(columns_.size()) + "!");
+
+  return columns_[i];
+}
+
+const Column &Schema::operator[](const std::string &name) const {
+  return columns_[index_of(name)];
+}
+
+std::size_t Schema::index_of(const std::string &name) const {
+  std::size_t match = columns_.size();
+  for (std::size_t i{0}; i < columns_.size(); ++i) {
+    if (columns_[i].name == name) {
+      if (match != columns_.size())
+        throw std::runtime_error("Cannot return ambiguous column named \"" +
+                                 name + "\"");
+      match = i;
+    }
+  }
+
+  if (match == columns_.size())
+    throw std::runtime_error("Cannot find column named \"" + name +
+                             "\" in schema");
+
+  return match;
+}
+
+Schema project_schema(const Schema &schema,
+                      const std::vector<std::size_t> &positions) {
+  std::vector<Column> columns;
+  columns.reserve(positions.size());
+
+  for (std::size_t position : positions)
+    columns.push_back(schema[position]);
+
+  return Schema(std::move(columns));
+}
+
+Schema concat_schemas(const Schema &left, const Schema &right) {
+  std::vector<Column> columns;
+  columns.reserve(left.size() + right.size());
+
+  for (std::size_t i{0}; i < left.size(); ++i)
+    columns.push_back(left[i]);
+  for (std::size_t i{0}; i < right.size(); ++i)
+    columns.push_back(right[i]);
+
+  return Schema(std::move(columns));
 }
 
 } // namespace vql::algebra
