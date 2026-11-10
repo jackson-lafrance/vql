@@ -1,5 +1,6 @@
 #ifndef TUPLE_H
 #define TUPLE_H
+#include "schema.h"
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -10,20 +11,26 @@
 namespace vql::algebra {
 using Value = std::variant<std::int32_t, std::string>;
 
-using Tuple = std::vector<Value>;
+class Tuple {
+public:
+  Tuple() = default;
+  explicit Tuple(std::vector<Value> values);
+
+  std::size_t size() const;
+  Value operator[](std::size_t i) const;
+
+private:
+  std::vector<Value> values_;
+};
 
 struct TupleHash {
-  std::size_t operator()(const Tuple &tuple) const {
-    std::size_t tuple_hash = tuple.size();
-    for (const Value &value : tuple) {
-      const std::size_t value_hash = std::hash<Value>{}(value);
-      tuple_hash ^=
-          value_hash + 0x9e3779b9 + (tuple_hash << 6) + (tuple_hash >> 2);
-    }
-
-    return tuple_hash;
-  }
+  std::size_t operator()(const Tuple &tuple) const;
 };
+
+void validate_tuple(const Tuple &tuple, const Schema &schema);
+Tuple project_tuple(const Tuple &tuple,
+                    const std::vector<std::size_t> &positions);
+Tuple concat_tuples(const Tuple &left, const Tuple &right);
 } // namespace vql::algebra
 
 #endif // TUPLE_H
