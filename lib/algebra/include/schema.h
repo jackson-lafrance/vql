@@ -6,7 +6,6 @@
 #include <vector>
 
 namespace vql::algebra {
-
 enum class DataType {
   INT,
   VARCHAR,

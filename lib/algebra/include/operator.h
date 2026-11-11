@@ -12,15 +12,14 @@
 
 namespace vql::algebra {
 class Operator {
-protected:
+public:
   struct Counter {
-    std::size_t tuples_out;
-    std::size_t comparisons;
-    std::size_t page_reads;
-    std::size_t page_writes;
+    std::size_t tuples_out{0};
+    std::size_t comparisons{0};
+    std::size_t page_reads{0};
+    std::size_t page_writes{0};
   };
 
-public:
   virtual ~Operator() = default;
   virtual const Schema &schema() const = 0;
   virtual void open() = 0;
@@ -34,7 +33,7 @@ protected:
   Operator() = default;
 
   State state_{State::CREATED};
-  Counter counter_{0, 0, 0, 0};
+  Counter counter_{};
   Schema schema_{std::vector<Column>{}};
 };
 
