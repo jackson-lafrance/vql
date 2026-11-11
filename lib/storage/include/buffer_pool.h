@@ -30,6 +30,8 @@ public:
       frames_[cache_location.value()].pin_count++;
       if (policy_ == Policy::LRU)
         frames_[cache_location.value()].sec = ++op;
+      if (policy_ == Policy::CLOCK)
+        frames_[cache_location.value()].referenced = true;
       return frames_[cache_location.value()].data;
     }
 
@@ -71,6 +73,10 @@ public:
     frame.page_id = id;
     if (policy_ == Policy::LRU)
       frame.sec = ++op;
+    if (policy_ == Policy::CLOCK) {
+      frame.referenced = true;
+      clock_hand_ = (location + 1) % frames_.size();
+    }
     frame.pin_count = 0;
     frame.dirty = true;
 
@@ -91,7 +97,10 @@ public:
   Stats stats() const { return stats_; };
 
   BufferPool(std::size_t frames, Policy policy, const std::string &path)
-      : frames_(frames), disk_manager_(path), policy_(policy) {};
+      : frames_(frames), disk_manager_(path), policy_(policy) {
+    if (frames == 0)
+      throw std::invalid_argument("Frames cannot be 0!");
+  };
   ~BufferPool() = default;
 
   BufferPool(const BufferPool &dm) = delete;
@@ -116,6 +125,10 @@ private:
     frame.pin_count = 1;
     if (policy_ == Policy::LRU)
       frame.sec = ++op;
+    if (policy_ == Policy::CLOCK) {
+      frame.referenced = true;
+      clock_hand_ = (frame_location + 1) % frames_.size();
+    }
     return frame.data;
   }
 
@@ -128,7 +141,7 @@ private:
       std::size_t lowest = frames_.size();
       for (std::size_t i{0}; i < frames_.size(); ++i) {
         if (frames_[i].pin_count == 0 &&
-            (lowest == frames_.size() || frames_[i].sec < lowest))
+            (lowest == frames_.size() || frames_[i].sec < frames_[lowest].sec))
           lowest = i;
       }
 
@@ -143,9 +156,38 @@ private:
       }
 
       return lowest;
-    } else {
-
     }
+    if (policy_ == Policy::CLOCK) {
+      std::size_t aeonglass = frames_.size() * 2;
+
+      while (aeonglass > 0) {
+        aeonglass--;
+
+        std::size_t index = clock_hand_;
+        clock_hand_ = (clock_hand_ + 1) % frames_.size();
+
+        if (frames_[index].pin_count > 0)
+          continue;
+
+        if (frames_[index].referenced) {
+          frames_[index].referenced = false;
+          continue;
+        }
+
+        if (frames_[index].dirty) {
+          disk_manager_.write_page(frames_[index].page_id.value(),
+                                   frames_[index].data);
+          ++stats_.writes;
+          frames_[index].dirty = false;
+        }
+
+        return index;
+      }
+
+      throw std::runtime_error("No unpinned frame available!");
+    }
+
+    throw std::logic_error("Unknown buffer pool policy!");
   }
 
   std::optional<std::size_t> check_cache_for_page(std::size_t page_id) const {
@@ -162,13 +204,15 @@ private:
     std::size_t pin_count{0};
     bool dirty{false};
     std::size_t sec{0};
+    bool referenced{false};
   };
 
   std::vector<Frame> frames_;
   Stats stats_{};
   DiskManager disk_manager_;
   Policy policy_;
-  std::size_t op = 0;
+  std::size_t op{0};
+  std::size_t clock_hand_{0};
 };
 } // namespace vql::storage
 
