@@ -100,7 +100,7 @@ std::optional<Tuple> FilterOperator::next() {
     if (!in.has_value())
       return std::nullopt;
 
-      ++counter_.comparisons;
+    ++counter_.comparisons;
     if (condition_(in.value())) {
       ++counter_.tuples_out;
       return in;
