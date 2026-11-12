@@ -1,20 +1,21 @@
 #include "buffer_pool.h"
 
 #include <stdexcept>
+#include <utility>
 
 namespace vql::storage {
-BufferPool::BufferPool(std::size_t frames, Policy policy,
-                       const std::string &path)
-    : frames_(frames), disk_manager_(path), policy_(policy) {
+BufferPool::BufferPool(std::size_t frames, Policy policy)
+    : frames_(frames), policy_(policy) {
   if (frames == 0)
     throw std::invalid_argument("Frames cannot be 0!");
 }
 
 BufferPool::~BufferPool() = default;
 
-Page &BufferPool::fetch_page(std::size_t page_id) {
+Page &BufferPool::fetch_page(std::size_t file_id, std::size_t page_id) {
   // happy cache :)
-  std::optional<std::size_t> cache_location = check_cache_for_page(page_id);
+  std::optional<std::size_t> cache_location =
+      check_cache_for_page(file_id, page_id);
   if (cache_location.has_value()) {
     Frame &frame = frames_[cache_location.value()];
     ++stats_.hits;
@@ -32,13 +33,16 @@ Page &BufferPool::fetch_page(std::size_t page_id) {
   bool replacing = frame.page_id.has_value();
 
   frame.page_id.reset();
+  frame.file_id.reset();
   frame.pin_count = 0;
   frame.dirty = false;
 
   Page &page = frame.data;
-  disk_manager_.read_page(page_id, page);
+  DiskManager &disk_manager = *disk_managers_.at(file_id);
+  disk_manager.read_page(page_id, page);
 
   frame.page_id = page_id;
+  frame.file_id = file_id;
   frame.pin_count = 1;
   record_access(frame);
   if (policy_ == Policy::CLOCK)
@@ -52,8 +56,10 @@ Page &BufferPool::fetch_page(std::size_t page_id) {
   return page;
 }
 
-void BufferPool::unpin_page(std::size_t page_id, bool is_dirty) {
-  std::optional<std::size_t> cache_location = check_cache_for_page(page_id);
+void BufferPool::unpin_page(std::size_t file_id, std::size_t page_id,
+                            bool is_dirty) {
+  std::optional<std::size_t> cache_location =
+      check_cache_for_page(file_id, page_id);
   if (!cache_location.has_value())
     throw std::runtime_error("Page to unpin is not in cache!");
 
@@ -65,13 +71,15 @@ void BufferPool::unpin_page(std::size_t page_id, bool is_dirty) {
   frame.dirty = frame.dirty || is_dirty;
 }
 
-std::size_t BufferPool::new_page() {
+std::size_t BufferPool::new_page(std::size_t file_id) {
+  DiskManager &disk_manager = *disk_managers_.at(file_id);
   std::size_t location = find_and_clean_unpinned_page();
-  std::size_t id = disk_manager_.allocate_page();
+  std::size_t id = disk_manager.allocate_page();
 
   Frame &frame = frames_[location];
   frame.data.fill(0);
   frame.page_id = id;
+  frame.file_id = file_id;
   record_access(frame);
   if (policy_ == Policy::CLOCK)
     clock_hand_ = (location + 1) % frames_.size();
@@ -79,6 +87,23 @@ std::size_t BufferPool::new_page() {
   frame.dirty = true;
 
   return id;
+}
+
+std::size_t BufferPool::open_file(const std::string &path) {
+  if (file_ids_.contains(path))
+    return file_ids_.at(path);
+
+  disk_managers_.push_back(std::make_unique<DiskManager>(path));
+  std::size_t file_id = disk_managers_.size() - 1;
+
+  try {
+    file_ids_.emplace(path, file_id);
+  } catch (...) {
+    disk_managers_.pop_back();
+    throw;
+  }
+
+  return file_id;
 }
 
 void BufferPool::flush_all() {
@@ -140,10 +165,11 @@ std::size_t BufferPool::find_and_clean_unpinned_page() {
 }
 
 std::optional<std::size_t>
-BufferPool::check_cache_for_page(std::size_t page_id) const {
+BufferPool::check_cache_for_page(std::size_t file_id,
+                                 std::size_t page_id) const {
   for (std::size_t i{0}; i < frames_.size(); ++i) {
     const Frame &frame = frames_[i];
-    if (frame.page_id == page_id)
+    if (frame.page_id == page_id && frame.file_id == file_id)
       return i;
   }
 
@@ -158,10 +184,11 @@ void BufferPool::record_access(Frame &frame) {
 }
 
 void BufferPool::flush_frame(Frame &frame) {
-  if (!frame.page_id.has_value() || !frame.dirty)
+  if (!frame.page_id.has_value() || !frame.file_id.has_value() || !frame.dirty)
     return;
 
-  disk_manager_.write_page(frame.page_id.value(), frame.data);
+  disk_managers_[frame.file_id.value()]->write_page(frame.page_id.value(),
+                                                    frame.data);
   ++stats_.writes;
   frame.dirty = false;
 }

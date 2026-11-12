@@ -9,7 +9,6 @@
 
 namespace vql::storage {
 namespace {
-// Call only after a system call returns -1. Return to retry on interruption.
 void throw_unless_interrupted(const char *operation) {
   const int error = errno;
   if (error != EINTR)
@@ -58,8 +57,8 @@ void DiskManager::write_page(std::size_t page_id, const Page &source) {
   std::size_t bytes_wrote = 0;
   while (bytes_wrote < source.size()) {
     ssize_t result =
-        ::pwrite(fd_, source.data() + bytes_wrote,
-                 source.size() - bytes_wrote, 4096 * page_id + bytes_wrote);
+        ::pwrite(fd_, source.data() + bytes_wrote, source.size() - bytes_wrote,
+                 4096 * page_id + bytes_wrote);
 
     if (result == -1) {
       throw_unless_interrupted("pwrite");
@@ -98,7 +97,9 @@ std::size_t DiskManager::num_pages() const {
   return info.st_size / 4096;
 }
 
-std::size_t DiskManager::read_counter() const { return read_counter_; }
+std::size_t DiskManager::read_counter() const {
+  return read_counter_; }
 
-std::size_t DiskManager::write_counter() const { return write_counter_; }
+std::size_t DiskManager::write_counter() const {
+  return write_counter_; }
 } // namespace vql::storage
