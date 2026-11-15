@@ -70,13 +70,13 @@ std::span<const char> get(const Page &page, std::size_t slot_id) {
   return {page.data() + offset, length};
 }
 
-std::optional<std::size_t> insert(Page &page, std::span<const char> record) {
+std::size_t insert(Page &page, std::span<const char> record) {
   std::size_t count = slot_count(page);
   std::size_t free_end = read_u16(page, 6);
 
   std::size_t available = free_space(page);
   if (available < 4 || available - 4 < record.size())
-    return std::nullopt;
+    throw std::logic_error("Not enough space on page!");
 
   std::size_t offset = free_end - record.size();
   std::copy(record.begin(), record.end(), page.data() + offset);

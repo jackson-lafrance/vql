@@ -15,8 +15,7 @@ struct RecordID {
 
 class HeapFile {
 public:
-  HeapFile(BufferPool &buffer_pool, std::size_t file_id)
-      : file_id_(file_id), buffer_pool_(buffer_pool) {}
+  HeapFile(BufferPool &buffer_pool, std::size_t file_id);
 
   RecordID insert(std::span<const char> record);
   RecordView get(RecordID record_id);

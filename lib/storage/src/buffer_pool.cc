@@ -1,7 +1,6 @@
 #include "buffer_pool.h"
 
 #include <stdexcept>
-#include <utility>
 
 namespace vql::storage {
 BufferPool::BufferPool(std::size_t frames, Policy policy)

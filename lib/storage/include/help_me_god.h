@@ -21,7 +21,7 @@ std::size_t free_space(const Page &page);
 bool is_live(const Page &page, std::size_t slot_id);
 void initialize(Page &page, std::uint32_t page_id);
 std::span<const char> get(const Page &page, std::size_t slot_id);
-std::optional<std::size_t> insert(Page &page, std::span<const char> record);
+std::size_t insert(Page &page, std::span<const char> record);
 void kill(Page &page, std::size_t slot_id);
 
 void initialize_directory(Page &page, std::uint32_t page_id);
