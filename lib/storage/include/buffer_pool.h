@@ -62,7 +62,8 @@ private:
 
   std::vector<Frame> frames_;
   Stats stats_{};
-  std::vector<std::unique_ptr<DiskManager>> disk_managers_;
+  std::unordered_map<std::size_t, std::unique_ptr<DiskManager>> disk_managers_;
+  std::size_t next_file_id_{0};
   std::unordered_map<std::string, std::size_t> file_ids_;
   Policy policy_;
   std::size_t op{0};

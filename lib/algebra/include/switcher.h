@@ -4,10 +4,14 @@
 #include "schema.h"
 #include "tuple.h"
 
+#include <cstddef>
 #include <span>
 #include <vector>
 
 namespace vql::algebra::switcher {
+std::size_t encoded_size(const Tuple &tuple, const Schema &schema);
+std::size_t encode_into(const Tuple &tuple, const Schema &schema,
+                        std::span<char> destination);
 std::vector<char> encode(const Tuple &tuple, const Schema &schema);
 Tuple decode(std::span<const char> record, const Schema &schema);
 

@@ -4,7 +4,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <span>
 #include <string>
 #include <variant>
 #include <vector>
@@ -20,6 +19,8 @@ public:
 
   std::size_t size() const;
   Value operator[](std::size_t i) const;
+  // just for borrowing the value instead of returning a copy
+  const Value &value_at(std::size_t i) const;
 
 private:
   std::vector<Value> values_;
@@ -29,10 +30,6 @@ struct SortKey {
   std::size_t position;
   bool ascending{true};
 };
-
-int compare_tuples(const Tuple &left, const Tuple &right);
-int compare_tuples(const Tuple &left, const Tuple &right,
-                   std::span<const SortKey> keys);
 
 struct TupleHash {
   std::size_t operator()(const Tuple &tuple) const;

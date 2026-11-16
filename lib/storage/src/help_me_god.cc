@@ -82,7 +82,6 @@ std::size_t insert(Page &page, std::span<const char> record) {
   std::copy(record.begin(), record.end(), page.data() + offset);
 
   std::size_t position = slot_position(count);
-  // On a valid 4096-byte page, these values all fit in 16 bits.
   write_u16(page, position, static_cast<std::uint16_t>(offset));
   write_u16(page, position + 2, static_cast<std::uint16_t>(record.size()));
 

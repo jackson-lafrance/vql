@@ -1,6 +1,7 @@
 #include "buffer_pool.h"
 
 #include <cerrno>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <system_error>
@@ -16,7 +17,7 @@ BufferPool::BufferPool(std::size_t frames, Policy policy)
 BufferPool::~BufferPool() = default;
 
 Page &BufferPool::fetch_page(std::size_t file_id, std::size_t page_id) {
-  if (file_id >= disk_managers_.size() || !disk_managers_[file_id])
+  if (!disk_managers_.contains(file_id))
     throw std::out_of_range("Invalid file ID!");
 
   // happy cache :)
@@ -78,7 +79,7 @@ void BufferPool::unpin_page(std::size_t file_id, std::size_t page_id,
 }
 
 std::size_t BufferPool::new_page(std::size_t file_id) {
-  if (file_id >= disk_managers_.size() || !disk_managers_[file_id])
+  if (!disk_managers_.contains(file_id))
     throw std::out_of_range("Invalid file ID!");
 
   DiskManager &disk_manager = *disk_managers_.at(file_id);
@@ -102,24 +103,26 @@ std::size_t BufferPool::open_file(const std::string &path) {
   if (file_ids_.contains(path))
     return file_ids_.at(path);
 
-  disk_managers_.push_back(std::make_unique<DiskManager>(path));
-  std::size_t file_id = disk_managers_.size() - 1;
+  if (next_file_id_ == std::numeric_limits<std::size_t>::max())
+    throw std::overflow_error("File ID space is exhausted!");
 
+  const std::size_t file_id = next_file_id_;
+  disk_managers_.emplace(file_id, std::make_unique<DiskManager>(path));
   try {
     file_ids_.emplace(path, file_id);
   } catch (...) {
-    disk_managers_.pop_back();
+    disk_managers_.erase(file_id);
     throw;
   }
-
+  ++next_file_id_;
   return file_id;
 }
 
 std::size_t BufferPool::num_pages(std::size_t file_id) const {
-  if (file_id >= disk_managers_.size() || !disk_managers_[file_id])
+  if (!disk_managers_.contains(file_id))
     throw std::out_of_range("Invalid file ID!");
 
-  return disk_managers_[file_id]->num_pages();
+  return disk_managers_.at(file_id)->num_pages();
 }
 
 void BufferPool::flush_all() {
@@ -128,7 +131,7 @@ void BufferPool::flush_all() {
 }
 
 void BufferPool::remove_file(std::size_t file_id) {
-  if (disk_managers_.size() <= file_id || disk_managers_[file_id] == nullptr)
+  if (!disk_managers_.contains(file_id))
     throw std::logic_error("Invalid file id to remove!");
 
   std::string path;
@@ -159,7 +162,7 @@ void BufferPool::remove_file(std::size_t file_id) {
     }
 
   file_ids_.erase(path);
-  disk_managers_[file_id].reset();
+  disk_managers_.erase(file_id);
 }
 
 BufferPool::Stats BufferPool::stats() const { return stats_; }
@@ -238,8 +241,8 @@ void BufferPool::flush_frame(Frame &frame) {
   if (!frame.page_id.has_value() || !frame.file_id.has_value() || !frame.dirty)
     return;
 
-  disk_managers_[frame.file_id.value()]->write_page(frame.page_id.value(),
-                                                    frame.data);
+  disk_managers_.at(frame.file_id.value())
+      ->write_page(frame.page_id.value(), frame.data);
   ++stats_.writes;
   frame.dirty = false;
 }

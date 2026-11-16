@@ -109,7 +109,6 @@ RecordID HeapFile::insert(std::span<const char> record) {
 
     buffer_pool_.unpin_page(file_id_, directory_id, directory_dirty);
     directory_id = next_id;
-    // The next iteration also handles a newly created empty directory.
   }
 }
 

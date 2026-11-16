@@ -1,8 +1,10 @@
 #include "switcher.h"
 
+#include <algorithm>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -10,26 +12,51 @@
 
 namespace vql::algebra::switcher {
 
-std::vector<char> encode(const Tuple &tuple, const Schema &schema) {
+std::size_t encoded_size(const Tuple &tuple, const Schema &schema) {
   validate_tuple(tuple, schema);
 
-  std::vector<char> record;
-  for (std::size_t i{0}; i < schema.size(); ++i) {
-    const Value value = tuple[i];
+  std::size_t size = 0;
+  for (std::size_t i = 0; i < schema.size(); ++i) {
+    const std::size_t field_size =
+        schema[i].type.data_type() == DataType::INT
+            ? 4
+            : 2 + std::get<std::string>(tuple.value_at(i)).size();
+    if (field_size > std::numeric_limits<std::size_t>::max() - size)
+      throw std::length_error("Encoded tuple size overflow!");
+    size += field_size;
+  }
+  return size;
+}
+
+std::size_t encode_into(const Tuple &tuple, const Schema &schema,
+                        std::span<char> destination) {
+  const std::size_t size = encoded_size(tuple, schema);
+  if (size > destination.size())
+    throw std::length_error("Not enough space to encode tuple!");
+
+  std::size_t position = 0;
+  for (std::size_t i = 0; i < schema.size(); ++i) {
+    const Value &value = tuple.value_at(i);
     if (schema[i].type.data_type() == DataType::INT) {
-      const unsigned int bits =
+      const auto bits =
           std::bit_cast<std::uint32_t>(std::get<std::int32_t>(value));
-      for (unsigned shift{0}; shift < 32; shift += 8)
-        record.push_back(static_cast<char>((bits >> shift) & 0xFF));
+      for (unsigned shift = 0; shift < 32; shift += 8)
+        destination[position++] = static_cast<char>((bits >> shift) & 0xFF);
     } else {
       const std::string &text = std::get<std::string>(value);
       const auto length = static_cast<std::uint16_t>(text.size());
-      record.push_back(static_cast<char>(length & 0xFF));
-      record.push_back(static_cast<char>((length >> 8) & 0xFF));
-      record.insert(record.end(), text.begin(), text.end());
+      destination[position++] = static_cast<char>(length & 0xFF);
+      destination[position++] = static_cast<char>((length >> 8) & 0xFF);
+      std::copy(text.begin(), text.end(), destination.begin() + position);
+      position += text.size();
     }
   }
+  return size;
+}
 
+std::vector<char> encode(const Tuple &tuple, const Schema &schema) {
+  std::vector<char> record(encoded_size(tuple, schema));
+  encode_into(tuple, schema, record);
   return record;
 }
 
