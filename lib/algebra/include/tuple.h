@@ -4,12 +4,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <span>
 #include <string>
 #include <variant>
 #include <vector>
 
 namespace vql::algebra {
 using Value = std::variant<std::int32_t, std::string>;
+int compare_values(const Value &left, const Value &right);
 
 class Tuple {
 public:
@@ -22,6 +24,15 @@ public:
 private:
   std::vector<Value> values_;
 };
+
+struct SortKey {
+  std::size_t position;
+  bool ascending{true};
+};
+
+int compare_tuples(const Tuple &left, const Tuple &right);
+int compare_tuples(const Tuple &left, const Tuple &right,
+                   std::span<const SortKey> keys);
 
 struct TupleHash {
   std::size_t operator()(const Tuple &tuple) const;

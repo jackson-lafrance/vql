@@ -9,6 +9,45 @@ std::size_t Tuple::size() const { return values_.size(); }
 
 Value Tuple::operator[](std::size_t i) const { return values_.at(i); }
 
+int compare_values(const Value &left, const Value &right) {
+  if (left.index() != right.index())
+    throw std::runtime_error("Cannot compare values of different types!");
+
+  if (left < right)
+    return -1;
+  if (left > right)
+    return 1;
+  return 0;
+}
+
+int compare_tuples(const Tuple &left, const Tuple &right) {
+  if (left.size() != right.size())
+    throw std::runtime_error("Cannot compare tuples of different sizes!");
+
+  for (std::size_t i{0}; i < left.size(); ++i)
+    if (compare_values(left[i], right[i]) != 0)
+      return compare_values(left[i], right[i]);
+
+  return 0;
+}
+
+int compare_tuples(const Tuple &left, const Tuple &right,
+                   std::span<const SortKey> keys) {
+  if (left.size() != right.size())
+    throw std::runtime_error("Cannot compare tuples of different sizes!");
+
+  for (const SortKey &key : keys)
+    if (key.position >= left.size())
+      throw std::out_of_range("Sort key position is out of range!");
+
+  for (const SortKey &key : keys)
+    if (const int result = compare_values(left[key.position], right[key.position]);
+        result != 0)
+      return key.ascending ? result : -result;
+
+  return 0;
+}
+
 std::size_t TupleHash::operator()(const Tuple &tuple) const {
   std::size_t tuple_hash = tuple.size();
   for (std::size_t i{0}; i < tuple.size(); ++i) {
