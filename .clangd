@@ -1,4 +1,6 @@
 CompileFlags:
   Add:
     - -I../include
+    - -I/home/jacksonlafrance/Reborn/vql/lib/algebra/include
+    - -I/home/jacksonlafrance/Reborn/vql/lib/storage/include
     - -std=c++20
