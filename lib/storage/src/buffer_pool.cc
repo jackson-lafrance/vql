@@ -1,6 +1,10 @@
 #include "buffer_pool.h"
 
+#include <cerrno>
 #include <stdexcept>
+#include <string>
+#include <system_error>
+#include <unistd.h>
 
 namespace vql::storage {
 BufferPool::BufferPool(std::size_t frames, Policy policy)
@@ -12,6 +16,9 @@ BufferPool::BufferPool(std::size_t frames, Policy policy)
 BufferPool::~BufferPool() = default;
 
 Page &BufferPool::fetch_page(std::size_t file_id, std::size_t page_id) {
+  if (file_id >= disk_managers_.size() || !disk_managers_[file_id])
+    throw std::out_of_range("Invalid file ID!");
+
   // happy cache :)
   std::optional<std::size_t> cache_location =
       check_cache_for_page(file_id, page_id);
@@ -71,6 +78,9 @@ void BufferPool::unpin_page(std::size_t file_id, std::size_t page_id,
 }
 
 std::size_t BufferPool::new_page(std::size_t file_id) {
+  if (file_id >= disk_managers_.size() || !disk_managers_[file_id])
+    throw std::out_of_range("Invalid file ID!");
+
   DiskManager &disk_manager = *disk_managers_.at(file_id);
   std::size_t location = find_and_clean_unpinned_page();
   std::size_t id = disk_manager.allocate_page();
@@ -105,9 +115,51 @@ std::size_t BufferPool::open_file(const std::string &path) {
   return file_id;
 }
 
+std::size_t BufferPool::num_pages(std::size_t file_id) const {
+  if (file_id >= disk_managers_.size() || !disk_managers_[file_id])
+    throw std::out_of_range("Invalid file ID!");
+
+  return disk_managers_[file_id]->num_pages();
+}
+
 void BufferPool::flush_all() {
   for (Frame &frame : frames_)
     flush_frame(frame);
+}
+
+void BufferPool::remove_file(std::size_t file_id) {
+  if (disk_managers_.size() <= file_id || disk_managers_[file_id] == nullptr)
+    throw std::logic_error("Invalid file id to remove!");
+
+  std::string path;
+  for (const auto &guy : file_ids_) {
+    if (guy.second == file_id) {
+      path.assign(guy.first);
+    }
+  }
+
+  if (path == "")
+    throw std::logic_error("Cannot find pathname to remove!");
+
+  for (const auto &frame : frames_)
+    if (frame.file_id == file_id && frame.pin_count != 0)
+      throw std::logic_error("Cannot remove a pinned file!");
+
+  if (::unlink(path.c_str()) == -1)
+    throw std::system_error(errno, std::generic_category(), "unlink");
+
+  for (auto &frame : frames_)
+    if (frame.file_id == file_id) {
+      frame.file_id.reset();
+      frame.page_id.reset();
+      frame.pin_count = 0;
+      frame.dirty = false;
+      frame.sec = 0;
+      frame.referenced = false;
+    }
+
+  file_ids_.erase(path);
+  disk_managers_[file_id].reset();
 }
 
 BufferPool::Stats BufferPool::stats() const { return stats_; }

@@ -8,13 +8,11 @@
 #include <unistd.h>
 
 namespace vql::storage {
-namespace {
 void throw_unless_interrupted(const char *operation) {
   const int error = errno;
   if (error != EINTR)
     throw std::system_error(error, std::generic_category(), operation);
 }
-} // namespace
 
 DiskManager::DiskManager(const std::string &path) {
   while ((fd_ = ::open(path.c_str(), O_RDWR | O_CREAT, 0600)) == -1)
@@ -97,9 +95,7 @@ std::size_t DiskManager::num_pages() const {
   return info.st_size / 4096;
 }
 
-std::size_t DiskManager::read_counter() const {
-  return read_counter_; }
+std::size_t DiskManager::read_counter() const { return read_counter_; }
 
-std::size_t DiskManager::write_counter() const {
-  return write_counter_; }
+std::size_t DiskManager::write_counter() const { return write_counter_; }
 } // namespace vql::storage
