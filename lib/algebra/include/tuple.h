@@ -27,6 +27,10 @@ struct TupleHash {
   std::size_t operator()(const Tuple &tuple) const;
 };
 
+struct TupleEqual {
+  bool operator()(const Tuple &left, const Tuple &right) const;
+};
+
 void validate_tuple(const Tuple &tuple, const Schema &schema);
 Tuple project_tuple(const Tuple &tuple,
                     const std::vector<std::size_t> &positions);

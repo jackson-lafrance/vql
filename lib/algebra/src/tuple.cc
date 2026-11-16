@@ -21,6 +21,17 @@ std::size_t TupleHash::operator()(const Tuple &tuple) const {
   return tuple_hash;
 }
 
+bool TupleEqual::operator()(const Tuple &left, const Tuple &right) const {
+  if (left.size() != right.size())
+    return false;
+
+  for (std::size_t i{0}; i < left.size(); ++i)
+    if (left[i] != right[i])
+      return false;
+
+  return true;
+}
+
 void validate_tuple(const Tuple &tuple, const Schema &schema) {
   if (schema.size() != tuple.size())
     throw std::runtime_error("Tuple size of " + std::to_string(tuple.size()) +
