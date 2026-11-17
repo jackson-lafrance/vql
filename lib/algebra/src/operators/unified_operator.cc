@@ -1,5 +1,6 @@
 #include "operators/unified_operator.h"
 
+#include <initializer_list>
 #include <stdexcept>
 #include <utility>
 
@@ -35,6 +36,14 @@ void UnifiedOperator::open() {
     throw std::logic_error("UnionAll can only be opened once!");
 
   state_ = State::FAILED;
+  for (const Schema *schema : {&left_->schema(), &right_->schema()})
+    for (std::size_t i = 0; i < schema->size(); ++i)
+      for (std::size_t j = 0; j < i; ++j)
+        if ((*schema)[i].name == (*schema)[j].name)
+          throw std::invalid_argument(
+              "UnionAll input schema contains duplicate column name \"" +
+              (*schema)[i].name + "\"!");
+
   // A failed open can still acquire resources that close must release.
   left_needs_close_ = true;
   left_->open();
