@@ -3,19 +3,26 @@
 
 #include "buffer_pool.h"
 #include "operator.h"
+#include "operators/hash_distinct_operator.h"
+#include "operators/sort_distinct_operator.h"
 
 #include <cstddef>
 #include <memory>
 #include <optional>
-#include <span>
-#include <vector>
 
 namespace vql::algebra {
-class HashDistinctOperator : public Operator {
+class DistinctOperator : public Operator {
 public:
-  HashDistinctOperator(std::unique_ptr<Operator> input,
-                       storage::BufferPool &buffer_pool,
-                       std::size_t partition_count);
+  enum class Mode { HASH, SORT };
+
+  struct Options {
+    std::size_t partition_count{0};  // HASH
+    std::size_t workspace_frames{0}; // sORT
+  };
+
+  DistinctOperator(std::unique_ptr<Operator> input,
+                   storage::BufferPool &buffer_pool, Mode mode,
+                   Options options);
 
   const Schema &schema() const override;
   void open() override;
@@ -24,25 +31,7 @@ public:
   Counter counters() const override;
 
 private:
-  void partition_input();
-  bool prepare_next_batch();
-  bool batch_contains(std::span<const char> record);
-  std::size_t create_temp_file();
-  void remove_temp_file(std::size_t file_id);
-
-  std::unique_ptr<Operator> input_;
-  storage::BufferPool &buffer_pool_;
-  std::size_t partition_count_;
-
-  std::vector<std::size_t> pending_files_;
-  std::vector<std::size_t> owned_files_;
-
-  std::optional<std::size_t> batch_file_id_;
-  Page *batch_page_{nullptr};
-  std::size_t output_position{2};
-
-  bool input_needs_close_{false};
-  bool sleepy_{false};
+  std::unique_ptr<Operator> implementation_;
 };
 } // namespace vql::algebra
 
