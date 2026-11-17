@@ -68,7 +68,7 @@ std::optional<Tuple> UnifiedOperator::next() {
       std::optional<Tuple> in = left_->next();
       if (in.has_value()) {
         ++counter_.tuples_out;
-        return in;
+        return in->with_schema(schema_);
       }
 
       left_->close();
@@ -79,10 +79,11 @@ std::optional<Tuple> UnifiedOperator::next() {
     }
 
     std::optional<Tuple> in = right_->next();
-    if (in.has_value())
-      ++counter_.tuples_out;
+    if (!in.has_value())
+      return std::nullopt;
 
-    return in;
+    ++counter_.tuples_out;
+    return in->with_schema(schema_);
   } catch (...) {
     state_ = State::FAILED;
     throw;

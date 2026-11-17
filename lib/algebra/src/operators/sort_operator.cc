@@ -71,6 +71,11 @@ std::optional<Tuple> SortOperator::next() {
 
   const auto before = buffer_pool_.stats();
   try {
+    if (pending_advance_.has_value()) {
+      MergeInput &previous = merge_inputs_[*pending_advance_];
+      previous.record = previous.reader->next();
+      pending_advance_.reset();
+    }
     const auto winner = smallest_input();
     if (!winner.has_value()) {
       close_merge_inputs();
@@ -80,7 +85,7 @@ std::optional<Tuple> SortOperator::next() {
 
     MergeInput &input = merge_inputs_[*winner];
     Tuple result = switcher::decode(*input.record, schema_);
-    input.record = input.reader->next();
+    pending_advance_ = *winner;
     ++counter_.tuples_out;
     account_io(before);
     return result;
@@ -184,6 +189,7 @@ std::optional<std::size_t> SortOperator::smallest_input() {
 }
 
 void SortOperator::close_merge_inputs() {
+  pending_advance_.reset();
   for (MergeInput &input : merge_inputs_) {
     if (input.reader)
       input.reader->close();

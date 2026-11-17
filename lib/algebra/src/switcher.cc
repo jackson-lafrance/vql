@@ -5,22 +5,23 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <stdexcept>
-#include <string>
 #include <string_view>
-#include <utility>
 
 namespace vql::algebra::switcher {
 
 std::size_t encoded_size(const Tuple &tuple, const Schema &schema) {
   validate_tuple(tuple, schema);
+  if (const auto record = tuple.encoded_record())
+    return record->size();
 
   std::size_t size = 0;
   for (std::size_t i = 0; i < schema.size(); ++i) {
     const std::size_t field_size =
         schema[i].type.data_type() == DataType::INT
             ? 4
-            : 2 + std::get<std::string>(tuple.value_at(i)).size();
+            : 2 + std::get<std::string_view>(tuple.value_at(i)).size();
     if (field_size > std::numeric_limits<std::size_t>::max() - size)
       throw std::length_error("Encoded tuple size overflow!");
     size += field_size;
@@ -33,17 +34,22 @@ std::size_t encode_into(const Tuple &tuple, const Schema &schema,
   const std::size_t size = encoded_size(tuple, schema);
   if (size > destination.size())
     throw std::length_error("Not enough space to encode tuple!");
+  if (const auto record = tuple.encoded_record()) {
+    if (destination.data() != record->data())
+      std::copy(record->begin(), record->end(), destination.begin());
+    return size;
+  }
 
   std::size_t position = 0;
   for (std::size_t i = 0; i < schema.size(); ++i) {
-    const Value &value = tuple.value_at(i);
+    const Value value = tuple.value_at(i);
     if (schema[i].type.data_type() == DataType::INT) {
       const auto bits =
           std::bit_cast<std::uint32_t>(std::get<std::int32_t>(value));
       for (unsigned shift = 0; shift < 32; shift += 8)
         destination[position++] = static_cast<char>((bits >> shift) & 0xFF);
     } else {
-      const std::string &text = std::get<std::string>(value);
+      const std::string_view text = std::get<std::string_view>(value);
       const auto length = static_cast<std::uint16_t>(text.size());
       destination[position++] = static_cast<char>(length & 0xFF);
       destination[position++] = static_cast<char>((length >> 8) & 0xFF);
@@ -61,50 +67,13 @@ std::vector<char> encode(const Tuple &tuple, const Schema &schema) {
 }
 
 Tuple decode(std::span<const char> record, const Schema &schema) {
-  std::size_t position{0};
-  std::vector<Value> values;
-  values.reserve(schema.size());
-
-  for (std::size_t i{0}; i < schema.size(); ++i) {
-    if (schema[i].type.data_type() == DataType::INT) {
-      if (position > record.size() || record.size() - position < 4)
-        throw std::runtime_error("INT too short!");
-
-      values.emplace_back(
-          std::bit_cast<std::int32_t>(static_cast<std::uint32_t>(
-              static_cast<unsigned char>(record[position]) |
-              (static_cast<unsigned char>(record[position + 1]) << 8) |
-              (static_cast<unsigned char>(record[position + 2]) << 16) |
-              (static_cast<unsigned char>(record[position + 3]) << 24))));
-      position += 4;
-    } else {
-      if (position > record.size() || record.size() - position < 2)
-        throw std::runtime_error("VARCHAR too short!");
-
-      std::uint16_t length =
-          static_cast<unsigned char>(record[position]) |
-          (static_cast<unsigned char>(record[position + 1]) << 8);
-      position += 2;
-
-      if (length > record.size() - position ||
-          length > schema[i].type.max_length())
-        throw std::runtime_error("Malformed VARCHAR!");
-
-      values.emplace_back(std::string(record.data() + position, length));
-      position += length;
-    }
-  }
-
-  if (position != record.size())
-    throw std::runtime_error("Unexpected bytes after record!");
-
-  return Tuple(std::move(values));
+  return Tuple(schema, record);
 }
 
-std::span<const char> record_field_bytes(std::span<const char> record,
-                                         const Schema &schema,
-                                         std::size_t column) {
-  if (column >= schema.size())
+std::span<const char> scan_record(std::span<const char> record,
+                                  const Schema &schema,
+                                  std::optional<std::size_t> column) {
+  if (column.has_value() && *column >= schema.size())
     throw std::out_of_range("Sort key position is out of range!");
 
   std::size_t position = 0;
@@ -123,7 +92,7 @@ std::span<const char> record_field_bytes(std::span<const char> record,
 
     if (position > record.size() || length > record.size() - position)
       throw std::runtime_error("Truncated record field!");
-    if (i == column)
+    if (column.has_value() && i == *column)
       field = record.subspan(position, length);
     position += length;
   }
@@ -131,6 +100,16 @@ std::span<const char> record_field_bytes(std::span<const char> record,
     throw std::runtime_error("Unexpected bytes after record!");
 
   return field;
+}
+
+void validate_record(std::span<const char> record, const Schema &schema) {
+  scan_record(record, schema, std::nullopt);
+}
+
+std::span<const char> record_field_bytes(std::span<const char> record,
+                                         const Schema &schema,
+                                         std::size_t column) {
+  return scan_record(record, schema, column);
 }
 
 std::int32_t record_int(std::span<const char> field) {

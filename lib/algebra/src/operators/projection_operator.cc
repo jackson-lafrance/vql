@@ -20,6 +20,7 @@ ProjectionOperator::ProjectionOperator(std::unique_ptr<Operator> input,
     throw std::runtime_error(std::string("Projection: ") + error.what() + "!");
   }
   schema_ = project_schema(input_schema, positions_);
+  physical_positions_.resize(positions_.size());
 }
 
 const Schema &ProjectionOperator::schema() const { return schema_; }
@@ -42,15 +43,7 @@ std::optional<Tuple> ProjectionOperator::next() {
   if (!in.has_value())
     return std::nullopt;
 
-  const Tuple &tuple = in.value();
-
-  std::vector<Value> values;
-  values.reserve(schema_.size());
-
-  for (std::size_t position : positions_)
-    values.push_back(tuple[position]);
-
-  Tuple out(std::move(values));
+  Tuple out = in->project(schema_, positions_, physical_positions_);
   ++counter_.tuples_out;
 
   return out;

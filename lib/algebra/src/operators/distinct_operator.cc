@@ -140,18 +140,33 @@ void HashDistinctOperator::partition_input() {
   input_needs_close_ = true;
   input_->open();
   while (auto tuple = input_->next()) {
-    const auto record = switcher::encode(*tuple, schema_);
+    const std::size_t size = switcher::encoded_size(*tuple, schema_);
+    if (size > 4092)
+      throw std::length_error("Record is too large for a temporary page!");
     const std::size_t partition = TupleHash{}(*tuple) % partition_count_;
-    if (!partitions[partition].has_value()) {
-      const std::size_t file_id = create_temp_file();
-      partitions[partition] = file_id;
-      pending_files_.push_back(file_id);
-    }
 
     const auto before = buffer_pool_.stats();
     try {
-      storage::TempFile writer(buffer_pool_, *partitions[partition]);
-      writer.append(record);
+      if (!partitions[partition].has_value()) {
+        const std::size_t file_id = create_temp_file();
+        partitions[partition] = file_id;
+        pending_files_.push_back(file_id);
+      }
+      if (!batch_file_id_.has_value()) {
+        batch_file_id_ = create_temp_file();
+        buffer_pool_.new_page(*batch_file_id_);
+      }
+      Page &staging = buffer_pool_.fetch_page(*batch_file_id_, 0);
+      try {
+        switcher::encode_into(*tuple, schema_,
+                              std::span<char>(staging).first(size));
+        storage::TempFile writer(buffer_pool_, *partitions[partition]);
+        writer.append(std::span<const char>(staging).first(size));
+      } catch (...) {
+        buffer_pool_.unpin_page(*batch_file_id_, 0, true);
+        throw;
+      }
+      buffer_pool_.unpin_page(*batch_file_id_, 0, true);
     } catch (...) {
       const auto after = buffer_pool_.stats();
       counter_.page_reads += after.reads - before.reads;

@@ -69,6 +69,7 @@ private:
   std::vector<std::size_t> run_files_;
   std::vector<std::size_t> owned_files_;
   std::vector<MergeInput> merge_inputs_;
+  std::optional<std::size_t> pending_advance_;
   bool input_needs_close_{false};
 };
 } // namespace vql::algebra

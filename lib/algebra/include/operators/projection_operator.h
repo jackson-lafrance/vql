@@ -23,6 +23,7 @@ private:
   std::unique_ptr<Operator> input_;
   std::vector<std::string> column_names_;
   std::vector<std::size_t> positions_;
+  std::vector<std::size_t> physical_positions_;
 };
 } // namespace vql::algebra
 
