@@ -56,7 +56,6 @@ void SortOperator::open() {
   const auto before = buffer_pool_.stats();
   try {
     merge_runs();
-    prepare_merge(run_files_);
   } catch (...) {
     account_io(before);
     throw;
@@ -71,6 +70,10 @@ std::optional<Tuple> SortOperator::next() {
 
   const auto before = buffer_pool_.stats();
   try {
+    if (!final_merge_prepared_) {
+      prepare_merge(run_files_);
+      final_merge_prepared_ = true;
+    }
     if (pending_advance_.has_value()) {
       MergeInput &previous = merge_inputs_[*pending_advance_];
       previous.record = previous.reader->next();
@@ -123,7 +126,7 @@ Operator::Counter SortOperator::counters() const { return counter_; }
 
 void SortOperator::merge_runs() {
   const std::size_t fan_in = workspace_frames_ - 1;
-  while (run_files_.size() > fan_in) {
+  while (run_files_.size() > 1) {
     std::vector<std::size_t> next_runs;
     next_runs.reserve((run_files_.size() - 1) / fan_in + 1);
     std::size_t begin = 0;

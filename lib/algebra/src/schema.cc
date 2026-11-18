@@ -98,4 +98,20 @@ Schema concat_schemas(const Schema &left, const Schema &right) {
   return Schema(std::move(columns));
 }
 
+void validate_set_schemas(const Schema &left, const Schema &right) {
+  if (left.size() != right.size())
+    throw std::runtime_error(
+        "Set operator inputs require schemas of the same size!");
+
+  for (std::size_t i = 0; i < left.size(); ++i) {
+    if (left[i].type.data_type() != right[i].type.data_type())
+      throw std::runtime_error(
+          "Set operator inputs require matching column types!");
+    if (left[i].type.data_type() == DataType::VARCHAR &&
+        left[i].type.max_length() != right[i].type.max_length())
+      throw std::runtime_error(
+          "Set operator inputs require matching VARCHAR sizes!");
+  }
+}
+
 } // namespace vql::algebra

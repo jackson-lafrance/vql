@@ -46,6 +46,7 @@ private:
 Schema project_schema(const Schema &schema,
                       const std::vector<std::size_t> &positions);
 Schema concat_schemas(const Schema &left, const Schema &right);
+void validate_set_schemas(const Schema &left, const Schema &right);
 
 } // namespace vql::algebra
 

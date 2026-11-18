@@ -66,6 +66,7 @@ private:
   storage::BufferPool &buffer_pool_;
   std::vector<SortKey> keys_;
   std::size_t workspace_frames_;
+  bool final_merge_prepared_{false};
   std::vector<std::size_t> run_files_;
   std::vector<std::size_t> owned_files_;
   std::vector<MergeInput> merge_inputs_;

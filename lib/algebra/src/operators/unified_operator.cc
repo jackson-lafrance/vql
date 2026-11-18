@@ -44,7 +44,6 @@ void UnifiedOperator::open() {
               "UnionAll input schema contains duplicate column name \"" +
               (*schema)[i].name + "\"!");
 
-  // A failed open can still acquire resources that close must release.
   left_needs_close_ = true;
   left_->open();
   state_ = State::OPEN;
