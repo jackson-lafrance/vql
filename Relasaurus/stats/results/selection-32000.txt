@@ -1,0 +1,12 @@
+Choose a mode:
+1) live
+2) tree
+3) stats
+> > OK
+> R
+a	b	
+SELECTION EXAMINATIONS: 32000
+JOIN COMPARISONS: 0
+WALL TIME (S): 0.002371
+OUTPUT TUPLES: 0
+> 

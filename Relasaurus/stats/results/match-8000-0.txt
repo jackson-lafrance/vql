@@ -1,0 +1,13 @@
+Choose a mode:
+1) live
+2) tree
+3) stats
+> > OK
+> OK
+> R JOIN S
+R.a	R.b	S.b	S.c	
+SELECTION EXAMINATIONS: 0
+JOIN COMPARISONS: 64000000
+WALL TIME (S): 3.88906
+OUTPUT TUPLES: 0
+> 

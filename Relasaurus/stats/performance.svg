@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="650" viewBox="0 0 1000 650">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<style>text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #202124; } .grid { stroke: #d9dde3; stroke-width: 1; } .axis { stroke: #202124; stroke-width: 2; }</style>
+<text x="500.0" y="32" text-anchor="middle" font-size="22" font-weight="700">Relasaurus Operator Scaling</text>
+<line class="grid" x1="100" y1="560.00" x2="960" y2="560.00"/>
+<text x="88" y="565.00" text-anchor="end" font-size="13">1e-5</text>
+<line class="grid" x1="100" y1="497.50" x2="960" y2="497.50"/>
+<text x="88" y="502.50" text-anchor="end" font-size="13">1e-4</text>
+<line class="grid" x1="100" y1="435.00" x2="960" y2="435.00"/>
+<text x="88" y="440.00" text-anchor="end" font-size="13">1e-3</text>
+<line class="grid" x1="100" y1="372.50" x2="960" y2="372.50"/>
+<text x="88" y="377.50" text-anchor="end" font-size="13">1e-2</text>
+<line class="grid" x1="100" y1="310.00" x2="960" y2="310.00"/>
+<text x="88" y="315.00" text-anchor="end" font-size="13">1e-1</text>
+<line class="grid" x1="100" y1="247.50" x2="960" y2="247.50"/>
+<text x="88" y="252.50" text-anchor="end" font-size="13">1e0</text>
+<line class="grid" x1="100" y1="185.00" x2="960" y2="185.00"/>
+<text x="88" y="190.00" text-anchor="end" font-size="13">1e1</text>
+<line class="grid" x1="100" y1="122.50" x2="960" y2="122.50"/>
+<text x="88" y="127.50" text-anchor="end" font-size="13">1e2</text>
+<line class="grid" x1="100" y1="60.00" x2="960" y2="60.00"/>
+<text x="88" y="65.00" text-anchor="end" font-size="13">1e3</text>
+<line class="grid" x1="100.00" y1="60" x2="100.00" y2="560"/>
+<text x="100.00" y="584" text-anchor="middle" font-size="13">1000</text>
+<line class="grid" x1="243.33" y1="60" x2="243.33" y2="560"/>
+<text x="243.33" y="584" text-anchor="middle" font-size="13">2000</text>
+<line class="grid" x1="386.67" y1="60" x2="386.67" y2="560"/>
+<text x="386.67" y="584" text-anchor="middle" font-size="13">4000</text>
+<line class="grid" x1="530.00" y1="60" x2="530.00" y2="560"/>
+<text x="530.00" y="584" text-anchor="middle" font-size="13">8000</text>
+<line class="grid" x1="673.33" y1="60" x2="673.33" y2="560"/>
+<text x="673.33" y="584" text-anchor="middle" font-size="13">16000</text>
+<line class="grid" x1="816.67" y1="60" x2="816.67" y2="560"/>
+<text x="816.67" y="584" text-anchor="middle" font-size="13">32000</text>
+<line class="grid" x1="960.00" y1="60" x2="960.00" y2="560"/>
+<text x="960.00" y="584" text-anchor="middle" font-size="13">64000</text>
+<line class="axis" x1="100" y1="60" x2="100" y2="560"/>
+<line class="axis" x1="100" y1="560" x2="960" y2="560"/>
+<text x="530.0" y="625" text-anchor="middle" font-size="16">Tuples per input relation (log scale)</text>
+<text x="24" y="310.0" text-anchor="middle" font-size="16" transform="rotate(-90 24 310.0)">Wall time in seconds (log scale)</text>
+<polyline points="100.00,322.71 243.33,285.28 386.67,247.94 530.00,210.84 673.33,171.78 816.67,134.97 960.00,97.43" fill="none" stroke="#d1495b" stroke-width="3"/>
+<circle cx="100.00" cy="322.71" r="5" fill="#d1495b"/>
+<circle cx="243.33" cy="285.28" r="5" fill="#d1495b"/>
+<circle cx="386.67" cy="247.94" r="5" fill="#d1495b"/>
+<circle cx="530.00" cy="210.84" r="5" fill="#d1495b"/>
+<circle cx="673.33" cy="171.78" r="5" fill="#d1495b"/>
+<circle cx="816.67" cy="134.97" r="5" fill="#d1495b"/>
+<circle cx="960.00" cy="97.43" r="5" fill="#d1495b"/>
+<polyline points="100.00,507.10 243.33,484.21 386.67,470.80 530.00,444.96 673.33,432.36 816.67,411.57 960.00,390.13" fill="none" stroke="#00798c" stroke-width="3"/>
+<circle cx="100.00" cy="507.10" r="5" fill="#00798c"/>
+<circle cx="243.33" cy="484.21" r="5" fill="#00798c"/>
+<circle cx="386.67" cy="470.80" r="5" fill="#00798c"/>
+<circle cx="530.00" cy="444.96" r="5" fill="#00798c"/>
+<circle cx="673.33" cy="432.36" r="5" fill="#00798c"/>
+<circle cx="816.67" cy="411.57" r="5" fill="#00798c"/>
+<circle cx="960.00" cy="390.13" r="5" fill="#00798c"/>
+<polyline points="100.00,495.64 243.33,468.02 386.67,457.75 530.00,440.28 673.33,418.68 816.67,397.87 960.00,376.80" fill="none" stroke="#edae49" stroke-width="3"/>
+<circle cx="100.00" cy="495.64" r="5" fill="#edae49"/>
+<circle cx="243.33" cy="468.02" r="5" fill="#edae49"/>
+<circle cx="386.67" cy="457.75" r="5" fill="#edae49"/>
+<circle cx="530.00" cy="440.28" r="5" fill="#edae49"/>
+<circle cx="673.33" cy="418.68" r="5" fill="#edae49"/>
+<circle cx="816.67" cy="397.87" r="5" fill="#edae49"/>
+<circle cx="960.00" cy="376.80" r="5" fill="#edae49"/>
+<rect x="108" y="60" width="230" height="105" rx="8" fill="#ffffff" stroke="#c8cdd4"/>
+<line x1="120" y1="80" x2="150" y2="80" stroke="#d1495b" stroke-width="4"/>
+<text x="162" y="85" font-size="14">Join (slope 1.998)</text>
+<line x1="120" y1="110" x2="150" y2="110" stroke="#00798c" stroke-width="4"/>
+<text x="162" y="115" font-size="14">Select (slope 1.015)</text>
+<line x1="120" y1="140" x2="150" y2="140" stroke="#edae49" stroke-width="4"/>
+<text x="162" y="145" font-size="14">Project (slope 1.017)</text>
+</svg>
