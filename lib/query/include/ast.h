@@ -1,6 +1,7 @@
 #ifndef VQL_QUERY_AST_H
 #define VQL_QUERY_AST_H
 
+#include "schema.h"
 #include "source.h"
 
 #include <cstdint>
@@ -21,6 +22,8 @@ struct ColumnRef {
   std::optional<NameWithSpan> qualifier;
   NameWithSpan name;
   Span span;
+  std::optional<algebra::Type> resolved_type;
+  std::optional<std::size_t> resolved_position;
 };
 
 struct Literal {
@@ -38,6 +41,8 @@ struct AggregateCall {
   AggregateFunction function;
   std::variant<ColumnRef, Star> argument;
   Span span;
+  std::optional<algebra::Type> resolved_type;
+  std::string output_name;
 };
 
 using Operand = std::variant<ColumnRef, Literal, AggregateCall>;
@@ -83,6 +88,7 @@ struct SelectItem {
   std::variant<ColumnRef, AggregateCall> expression;
   std::optional<NameWithSpan> alias;
   Span span;
+  std::string output_name;
 };
 
 using SelectList = std::variant<Star, std::vector<SelectItem>>;
@@ -102,6 +108,7 @@ struct SubqueryTable {
 struct TableRef {
   std::variant<NamedTable, SubqueryTable> value;
   Span span;
+  std::optional<algebra::Schema> output_schema;
 };
 
 struct CommaFrom {
@@ -133,6 +140,7 @@ struct SortKey {
   ColumnRef column;
   SortDirection direction{SortDirection::ASC};
   Span span;
+  std::optional<std::size_t> output_position;
 };
 
 struct LimitClause {
@@ -149,6 +157,7 @@ struct SelectBlock {
   std::vector<SortKey> order_by;
   std::optional<LimitClause> limit;
   Span span;
+  bool aggregating{false};
 };
 
 enum class SetOperator { UNION, UNION_ALL, INTERSECT, EXCEPT };
@@ -164,6 +173,7 @@ struct SetOperation {
 struct Query {
   std::variant<SelectBlock, SetOperation> value;
   Span span;
+  std::optional<algebra::Schema> output_schema;
 };
 
 struct IntType {};
@@ -187,6 +197,7 @@ struct CreateTable {
   NameWithSpan table;
   std::vector<ColumnDefinition> columns;
   Span span;
+  std::optional<algebra::Schema> resolved_schema;
 };
 
 struct Insert {
