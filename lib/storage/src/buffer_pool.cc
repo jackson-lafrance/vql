@@ -1,6 +1,8 @@
 #include "buffer_pool.h"
 
 #include <cerrno>
+#include <cstdlib>
+#include <filesystem>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -117,6 +119,27 @@ std::size_t BufferPool::open_file(const std::string &path) {
   ++next_file_id_;
   return file_id;
 }
+
+std::size_t BufferPool::create_temp_file() {
+  std::string path =
+      (std::filesystem::temp_directory_path() / "vql-temp-XXXXXX").string();
+  int fd = ::mkstemp(path.data());
+  if (fd == -1)
+    throw std::system_error(errno, std::generic_category(), "mkstemp");
+  if (::close(fd) == -1) {
+    int error = errno;
+    ::unlink(path.c_str());
+    throw std::system_error(error, std::generic_category(), "close");
+  }
+  try {
+    return open_file(path);
+  } catch (...) {
+    ::unlink(path.c_str());
+    throw;
+  }
+}
+
+std::size_t BufferPool::frames() const { return frames_.size(); }
 
 std::size_t BufferPool::num_pages(std::size_t file_id) const {
   if (!disk_managers_.contains(file_id))

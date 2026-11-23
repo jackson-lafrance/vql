@@ -30,6 +30,8 @@ public:
   void unpin_page(std::size_t file_id, std::size_t page_id, bool is_dirty);
   std::size_t new_page(std::size_t file_id);
   std::size_t open_file(const std::string &path);
+  std::size_t create_temp_file();
+  std::size_t frames() const;
   std::size_t num_pages(std::size_t file_id) const;
   void flush_all();
   void remove_file(std::size_t file_id);

@@ -123,7 +123,7 @@ std::uint32_t kind(const Page &page) {
     throw std::runtime_error("Unrecognized catalog metadata page!");
 
   std::uint32_t value = help_me_god::read_u32(page, 4);
-  if (value != 1 && value != 2 && value != 3)
+  if (value != 1 && value != 2 && value != 3 && value != 4)
     throw std::runtime_error("Unknown catalog page kind!");
   return value;
 }
@@ -220,6 +220,8 @@ Catalog::Entry Catalog::read_entry(std::uint32_t page_id) const {
   std::size_t pages;
   std::size_t tuples;
   std::size_t first;
+  std::uint32_t statistics_page;
+  std::uint32_t statistics_valid;
   Page &entry = buffer_pool_.fetch_page(file_id_, page_id);
   try {
     if (kind(entry) != 1)
@@ -227,8 +229,16 @@ Catalog::Entry Catalog::read_entry(std::uint32_t page_id) const {
     pages = as_size(read_u64(entry, 16));
     tuples = as_size(read_u64(entry, 24));
     first = help_me_god::read_u32(entry, 32);
+    statistics_page = help_me_god::read_u32(entry, 36);
+    statistics_valid = help_me_god::read_u32(entry, 40);
     if (first != 0 || pages == 0)
       throw std::runtime_error("Invalid catalog table page information!");
+    if (statistics_valid > 1 ||
+        (statistics_valid == 1 && statistics_page == 0xFFFFFFFF) ||
+        (statistics_page != 0xFFFFFFFF &&
+         (statistics_page == 0 ||
+          statistics_page >= buffer_pool_.num_pages(file_id_))))
+      throw std::runtime_error("Invalid catalog statistics pointer!");
   } catch (...) {
     buffer_pool_.unpin_page(file_id_, page_id, false);
     throw;
@@ -298,7 +308,9 @@ Catalog::Entry Catalog::read_entry(std::uint32_t page_id) const {
     throw std::runtime_error("Invalid catalog table data filename!");
   return {{std::move(name), std::move(schema), std::move(filename), first,
            pages, tuples},
-          page_id};
+          page_id,
+          statistics_page,
+          statistics_valid == 1};
 }
 
 std::optional<Catalog::Entry> Catalog::find(const std::string &name) const {
@@ -371,6 +383,7 @@ std::uint32_t Catalog::write_entry(std::span<const char> payload) {
         write_u64(page, 24, 0);
         help_me_god::write_u32(page, 32, 0);
         help_me_god::write_u32(page, 36, 0xFFFFFFFF);
+        help_me_god::write_u32(page, 40, 0);
       }
       std::copy_n(payload.begin() + position, used, page.begin() + start);
     } catch (...) {
@@ -486,6 +499,7 @@ RecordID Catalog::insert(const std::string &name,
   std::size_t file = open_table_file(entry.table);
   HeapFile heap(buffer_pool_, file);
   try {
+    invalidate_statistics(entry);
     RecordID id = heap.insert(record);
     update_counts(entry, buffer_pool_.num_pages(file),
                   entry.table.num_tuples + 1);
@@ -508,8 +522,140 @@ void Catalog::kill(const std::string &name, RecordID id) {
     auto view = heap.get(id);
   }
   try {
+    invalidate_statistics(entry);
     heap.kill(id);
     update_counts(entry, entry.table.num_pages, entry.table.num_tuples - 1);
+  } catch (...) {
+    failed_ = true;
+    throw;
+  }
+}
+
+void Catalog::invalidate_statistics(const Entry &entry) {
+  if (!entry.statistics_valid)
+    return;
+  Page &page = buffer_pool_.fetch_page(file_id_, entry.page_id);
+  try {
+    help_me_god::write_u32(page, 40, 0);
+  } catch (...) {
+    buffer_pool_.unpin_page(file_id_, entry.page_id, false);
+    throw;
+  }
+  buffer_pool_.unpin_page(file_id_, entry.page_id, true);
+}
+
+std::vector<std::uint32_t>
+Catalog::statistics_pages(std::uint32_t first) const {
+  std::vector<std::uint32_t> pages;
+  std::uint32_t current = first;
+  while (current != 0xFFFFFFFF) {
+    if (current == 0 || current >= buffer_pool_.num_pages(file_id_))
+      throw std::runtime_error("Invalid statistics page ID!");
+    Page &page = buffer_pool_.fetch_page(file_id_, current);
+    std::uint32_t next;
+    try {
+      if (kind(page) != 4 || help_me_god::read_u32(page, 12) > 4080)
+        throw std::runtime_error("Invalid statistics page!");
+      next = help_me_god::read_u32(page, 8);
+      if (next != 0xFFFFFFFF && next <= current)
+        throw std::runtime_error("Invalid statistics page link!");
+    } catch (...) {
+      buffer_pool_.unpin_page(file_id_, current, false);
+      throw;
+    }
+    buffer_pool_.unpin_page(file_id_, current, false);
+    pages.push_back(current);
+    current = next;
+  }
+  return pages;
+}
+
+std::vector<char> Catalog::read_statistics(std::uint32_t first) const {
+  std::vector<char> bytes;
+  for (std::uint32_t id : statistics_pages(first)) {
+    Page &page = buffer_pool_.fetch_page(file_id_, id);
+    try {
+      std::size_t used = help_me_god::read_u32(page, 12);
+      bytes.insert(bytes.end(), page.begin() + 16, page.begin() + 16 + used);
+    } catch (...) {
+      buffer_pool_.unpin_page(file_id_, id, false);
+      throw;
+    }
+    buffer_pool_.unpin_page(file_id_, id, false);
+  }
+  if (bytes.empty())
+    throw std::runtime_error("Empty catalog statistics payload!");
+  return bytes;
+}
+
+std::optional<std::vector<char>>
+Catalog::get_statistics(const std::string &name) const {
+  Entry entry = require_table(name);
+  if (!entry.statistics_valid)
+    return std::nullopt;
+  return read_statistics(entry.statistics_page);
+}
+
+void Catalog::set_statistics(const std::string &name,
+                             std::span<const char> bytes) {
+  Entry entry = require_table(name);
+  if (bytes.empty())
+    throw std::invalid_argument("Statistics payload cannot be empty!");
+  if (entry.statistics_valid) {
+    auto previous = read_statistics(entry.statistics_page);
+    if (previous.size() == bytes.size() &&
+        std::equal(previous.begin(), previous.end(), bytes.begin()))
+      return;
+  }
+
+  auto pages = statistics_pages(entry.statistics_page);
+  std::size_t needed = bytes.size() / 4080 + (bytes.size() % 4080 != 0);
+  pages.reserve(std::max(pages.size(), needed));
+  try {
+    invalidate_statistics(entry);
+    while (pages.size() < needed) {
+      std::uint32_t id = allocate(buffer_pool_, file_id_);
+      Page &page = buffer_pool_.fetch_page(file_id_, id);
+      try {
+        help_me_god::write_u32(page, 0, 0x50435156); // VQCP
+        help_me_god::write_u32(page, 4, 4);
+        help_me_god::write_u32(page, 8, 0xFFFFFFFF);
+        help_me_god::write_u32(page, 12, 0);
+      } catch (...) {
+        buffer_pool_.unpin_page(file_id_, id, true);
+        throw;
+      }
+      buffer_pool_.unpin_page(file_id_, id, true);
+      pages.push_back(id);
+    }
+
+    std::size_t position = 0;
+    for (std::size_t i{0}; i < pages.size(); ++i) {
+      std::size_t used = std::min(bytes.size() - position, std::size_t{4080});
+      Page &page = buffer_pool_.fetch_page(file_id_, pages[i]);
+      try {
+        help_me_god::write_u32(
+            page, 8, i + 1 < pages.size() ? pages[i + 1] : 0xFFFFFFFF);
+        help_me_god::write_u32(page, 12, static_cast<std::uint32_t>(used));
+        std::fill(page.begin() + 16, page.end(), 0);
+        std::copy_n(bytes.begin() + position, used, page.begin() + 16);
+      } catch (...) {
+        buffer_pool_.unpin_page(file_id_, pages[i], true);
+        throw;
+      }
+      buffer_pool_.unpin_page(file_id_, pages[i], true);
+      position += used;
+    }
+
+    Page &table = buffer_pool_.fetch_page(file_id_, entry.page_id);
+    try {
+      help_me_god::write_u32(table, 36, pages[0]);
+      help_me_god::write_u32(table, 40, 1);
+    } catch (...) {
+      buffer_pool_.unpin_page(file_id_, entry.page_id, true);
+      throw;
+    }
+    buffer_pool_.unpin_page(file_id_, entry.page_id, true);
   } catch (...) {
     failed_ = true;
     throw;

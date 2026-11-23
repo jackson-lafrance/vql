@@ -41,12 +41,17 @@ public:
 
   RecordID insert(const std::string &name, std::span<const char> record);
   void kill(const std::string &name, RecordID id);
+  std::optional<std::vector<char>>
+  get_statistics(const std::string &name) const;
+  void set_statistics(const std::string &name, std::span<const char> bytes);
   void flush();
 
 private:
   struct Entry {
     TableInfo table;
     std::uint32_t page_id;
+    std::uint32_t statistics_page;
+    bool statistics_valid;
   };
 
   void require_usable() const;
@@ -56,6 +61,9 @@ private:
   std::size_t open_table_file(const TableInfo &table) const;
   std::uint32_t write_entry(std::span<const char> payload);
   void update_counts(const Entry &entry, std::size_t pages, std::size_t tuples);
+  void invalidate_statistics(const Entry &entry);
+  std::vector<std::uint32_t> statistics_pages(std::uint32_t first) const;
+  std::vector<char> read_statistics(std::uint32_t first) const;
 
   BufferPool &buffer_pool_;
   std::filesystem::path directory_;

@@ -29,6 +29,16 @@ struct ColumnStatistics {
   std::vector<HistogramBucket> histogram;
 };
 
+struct TableStatistics {
+  std::size_t num_tuples{0};
+  std::size_t num_pages{0};
+  std::size_t total_bytes{0};
+  std::size_t bucket_count{20};
+  std::vector<ColumnStatistics> columns;
+
+  double width() const;
+};
+
 class HistogramBuilder {
 public:
   HistogramBuilder(std::size_t expected_rows, std::size_t buckets = 20);

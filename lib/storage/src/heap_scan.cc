@@ -39,10 +39,10 @@ std::optional<ScannedRecord> HeapScan::next() {
       }
 
       if (data_page_ == nullptr) {
-        data_page_id =
-            help_me_god::get_page_id(*directory_page_, entry_index_);
+        data_page_id = help_me_god::get_page_id(*directory_page_, entry_index_);
 
         data_page_ = &buffer_pool_.fetch_page(file_id_, data_page_id);
+        ++data_pages_;
       }
 
       while (slot_index_ < help_me_god::slot_count(*data_page_)) {
@@ -68,6 +68,8 @@ std::optional<ScannedRecord> HeapScan::next() {
     throw;
   }
 }
+
+std::size_t HeapScan::data_pages() const { return data_pages_; }
 
 void HeapScan::close() {
   if (directory_page_ != nullptr)

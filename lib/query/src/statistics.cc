@@ -12,6 +12,12 @@ StatisticValue own_statistic_value(const algebra::Value &value) {
   return std::string(std::get<std::string_view>(value));
 }
 
+double TableStatistics::width() const {
+  if (num_tuples == 0)
+    return 0;
+  return static_cast<double>(total_bytes) / static_cast<double>(num_tuples);
+}
+
 HistogramBuilder::HistogramBuilder(std::size_t expected_rows,
                                    std::size_t buckets)
     : expected_rows_(expected_rows) {

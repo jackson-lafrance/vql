@@ -23,10 +23,12 @@ public:
 
   std::optional<ScannedRecord> next();
   void close();
+  std::size_t data_pages() const;
 
 private:
   std::size_t entry_index_{0};
   std::size_t slot_index_{0};
+  std::size_t data_pages_{0};
   bool finished_{false};
 
   BufferPool &buffer_pool_;
