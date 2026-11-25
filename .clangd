@@ -4,4 +4,5 @@ CompileFlags:
     - -I/home/jacksonlafrance/Reborn/vql/lib/algebra/include
     - -I/home/jacksonlafrance/Reborn/vql/lib/storage/include
     - -I/home/jacksonlafrance/Reborn/vql/lib/query/include
+    - -I/home/jacksonlafrance/Reborn/vql/lib/optimizer/include
     - -std=c++20
