@@ -47,7 +47,6 @@ SortMergeJoinOperator::~SortMergeJoinOperator() {
     try {
       close();
     } catch (...) {
-      // Explicit close reports errors and can be retried; destruction cannot throw.
     }
   }
 }
@@ -95,9 +94,12 @@ std::optional<Tuple> SortMergeJoinOperator::next() {
 
   const auto before = buffer_pool_.stats();
   try {
+    restore_cursor(left_);
     if (advance_right_) {
       advance(right_);
       advance_right_ = false;
+    } else {
+      restore_cursor(right_);
     }
     for (;;) {
       if (group_start_) {
@@ -107,15 +109,12 @@ std::optional<Tuple> SortMergeJoinOperator::next() {
           return result;
         }
 
-        // The entire right-key run has been emitted for this left row. The last
-        // copied output retains its key even when advancing left changes pages.
         advance(left_);
         if (left_.record && compare_left_to_output() == 0) {
           rewind_right(*group_start_);
           continue;
         }
         group_start_.reset();
-        // Keep right at the first row after its run, or at EOF.
         continue;
       }
 
@@ -147,6 +146,7 @@ std::optional<Tuple> SortMergeJoinOperator::next() {
 
 void SortMergeJoinOperator::advance(Cursor &cursor) {
   cursor.record.reset();
+  cursor.current.reset();
   while (cursor.next.page_id < cursor.page_count) {
     if (!cursor.page)
       cursor.page =
@@ -170,12 +170,27 @@ void SortMergeJoinOperator::rewind_right(Position position) {
   advance(right_);
 }
 
-void SortMergeJoinOperator::close_cursor(Cursor &cursor) {
+void SortMergeJoinOperator::unpin_cursor(Cursor &cursor) {
   cursor.record.reset();
   if (cursor.page) {
     buffer_pool_.unpin_page(cursor.file_id, cursor.next.page_id, false);
     cursor.page = nullptr;
   }
+}
+
+void SortMergeJoinOperator::restore_cursor(Cursor &cursor) {
+  if (cursor.page || !cursor.current)
+    return;
+  cursor.page = &buffer_pool_.fetch_page(cursor.file_id, cursor.current->page_id);
+  std::size_t offset = cursor.current->offset;
+  cursor.record = storage::temp_page::next(*cursor.page, offset);
+  if (!cursor.record)
+    throw std::logic_error("Missing current sort-merge row!");
+}
+
+void SortMergeJoinOperator::close_cursor(Cursor &cursor) {
+  unpin_cursor(cursor);
+  cursor.current.reset();
 }
 
 int SortMergeJoinOperator::compare_keys() {
@@ -213,6 +228,8 @@ Tuple SortMergeJoinOperator::emit_match() {
   output_size_ = left.size() + right.size();
   output_dirty_ = true;
   Tuple result(schema_, std::span<const char>(*output_page_).first(output_size_));
+  unpin_cursor(left_);
+  unpin_cursor(right_);
   ++counter_.tuples_out;
   advance_right_ = true;
   return result;
@@ -256,8 +273,6 @@ void SortMergeJoinOperator::close() {
 
 Operator::Counter SortMergeJoinOperator::counters() const {
   Counter result = counter_;
-  // The helper and the sorts are implementation details of this operator.
-  // Each accounts only its own I/O, so adding them does not count child I/O twice.
   for (const Counter internal : {inputs_->counters(), inputs_->left_counters(),
                                  inputs_->right_counters()}) {
     result.comparisons += internal.comparisons;

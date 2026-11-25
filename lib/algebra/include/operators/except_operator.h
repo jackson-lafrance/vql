@@ -27,6 +27,7 @@ private:
   int compare(const Tuple &left, const Tuple &right);
   int compare_to_previous(const Tuple &tuple);
   void remember(const Tuple &tuple);
+  Tuple emit_left();
   void create_previous_page();
   void account_io(storage::BufferPool::Stats before);
 

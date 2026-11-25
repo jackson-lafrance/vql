@@ -114,6 +114,8 @@ std::optional<Tuple> ExceptOperator::next() {
     throw std::logic_error("Except can only be queried when open!");
 
   try {
+    left_tuple_ = left_->restore_current();
+    right_tuple_ = right_->restore_current();
     while (true) {
       if (!left_tuple_)
         left_tuple_ = left_->next();
@@ -133,24 +135,12 @@ std::optional<Tuple> ExceptOperator::next() {
 
       if (!left_tuple_)
         return std::nullopt;
-      if (!right_tuple_) {
-        remember(*left_tuple_);
-        Tuple result(
-            schema_,
-            std::span<const char>(*previous_page_).first(*previous_size_));
-        ++counter_.tuples_out;
-        return result;
-      }
+      if (!right_tuple_)
+        return emit_left();
 
       const int order = compare(*left_tuple_, *right_tuple_);
-      if (order < 0) {
-        remember(*left_tuple_);
-        Tuple result(
-            schema_,
-            std::span<const char>(*previous_page_).first(*previous_size_));
-        ++counter_.tuples_out;
-        return result;
-      }
+      if (order < 0)
+        return emit_left();
       if (order > 0) {
         right_tuple_ = right_->next();
         continue;
@@ -164,6 +154,17 @@ std::optional<Tuple> ExceptOperator::next() {
     state_ = State::FAILED;
     throw;
   }
+}
+
+Tuple ExceptOperator::emit_left() {
+  remember(*left_tuple_);
+  left_tuple_.reset();
+  right_tuple_.reset();
+  left_->release_current();
+  right_->release_current();
+  ++counter_.tuples_out;
+  return Tuple(schema_,
+               std::span<const char>(*previous_page_).first(*previous_size_));
 }
 
 Operator::Counter ExceptOperator::counters() const {

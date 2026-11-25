@@ -38,6 +38,8 @@ public:
   TempFileReader &operator=(const TempFileReader &) = delete;
 
   std::optional<std::span<const char>> next();
+  void release_page();
+  std::span<const char> current();
   void close();
 
 private:
@@ -46,6 +48,7 @@ private:
   std::size_t page_count_;
   std::size_t page_id_{0};
   std::size_t position_{2};
+  std::optional<std::size_t> current_position_;
   Page *page_{nullptr};
   bool finished_{false};
 };

@@ -108,13 +108,15 @@ std::optional<std::span<const char>> TempFileReader::next() {
       if (page_ == nullptr)
         page_ = &buffer_pool_.fetch_page(file_id_, page_id_);
 
-      std::optional<std::span<const char>> record =
-          temp_page::next(*page_, position_);
-      if (record.has_value())
+      const std::size_t record_position = position_;
+      auto record = temp_page::next(*page_, position_);
+      if (record) {
+        current_position_ = record_position;
         return record;
+      }
 
-      buffer_pool_.unpin_page(file_id_, page_id_, false);
-      page_ = nullptr;
+      release_page();
+      current_position_.reset();
       ++page_id_;
       position_ = 2;
     }
@@ -127,11 +129,28 @@ std::optional<std::span<const char>> TempFileReader::next() {
   }
 }
 
-void TempFileReader::close() {
+void TempFileReader::release_page() {
   if (page_ != nullptr) {
     buffer_pool_.unpin_page(file_id_, page_id_, false);
     page_ = nullptr;
   }
+}
+
+std::span<const char> TempFileReader::current() {
+  if (!current_position_)
+    throw std::logic_error("Temporary reader has no current record!");
+  if (page_ == nullptr)
+    page_ = &buffer_pool_.fetch_page(file_id_, page_id_);
+  std::size_t position = *current_position_;
+  auto record = temp_page::next(*page_, position);
+  if (!record)
+    throw std::runtime_error("Current temporary record is missing!");
+  return *record;
+}
+
+void TempFileReader::close() {
+  release_page();
+  current_position_.reset();
   finished_ = true;
 }
 } // namespace vql::storage

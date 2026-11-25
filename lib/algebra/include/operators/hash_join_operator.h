@@ -60,6 +60,8 @@ private:
                     std::span<const char> right);
   void start_fallback(Partition &partition);
   void cleanup_partition();
+  void pin_table();
+  void unpin_table();
   void release_table();
   void create_output_page();
   void release_output_page();
@@ -84,8 +86,9 @@ private:
   // A three-frame share leaves no row page, so every nonempty pair uses BNL.
   std::optional<std::size_t> table_file_id_;
   std::vector<Page *> table_pages_;
+  bool table_dirty_{false};
   std::unique_ptr<storage::TempFileReader> probe_reader_;
-  std::optional<std::span<const char>> probe_record_;
+  bool has_probe_record_{false};
   std::uint64_t chain_{0};
   std::optional<std::size_t> output_file_id_;
   Page *output_page_{nullptr};

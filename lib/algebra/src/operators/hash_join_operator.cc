@@ -276,6 +276,7 @@ bool HashJoinOperator::build_table(std::size_t file_id) {
   const std::size_t index = buffer_pool_.new_page(*table_file_id_);
   Page &heads = buffer_pool_.fetch_page(*table_file_id_, index);
   table_pages_.push_back(&heads);
+  table_dirty_ = true;
   heads.fill(0);
 
   storage::TempFileReader reader(buffer_pool_, file_id);
@@ -355,27 +356,34 @@ std::optional<Tuple> HashJoinOperator::next() {
         cleanup_partition();
         continue;
       }
-      if (!probe_record_) {
-        probe_record_ = probe_reader_->next();
-        if (!probe_record_) {
+      pin_table();
+      std::optional<std::span<const char>> probe_record;
+      if (has_probe_record_) {
+        probe_record = probe_reader_->current();
+      } else {
+        probe_record = probe_reader_->next();
+        if (!probe_record) {
           cleanup_partition();
           continue;
         }
-        const Tuple probe(right_->schema(), *probe_record_);
+        has_probe_record_ = true;
+        const Tuple probe(right_->schema(), *probe_record);
         const auto bucket = hash_key(probe, false, TABLE_SEED) % BUCKETS;
         chain_ = read_link(*table_pages_[0], bucket * LINK_SIZE);
       }
       while (chain_ != 0) {
         const Entry entry = entry_at(chain_);
         chain_ = entry.next;
-        if (matching_keys(entry.record, *probe_record_)) {
-          Tuple result = emit_match(entry.record, *probe_record_);
+        if (matching_keys(entry.record, *probe_record)) {
+          Tuple result = emit_match(entry.record, *probe_record);
+          probe_reader_->release_page();
+          unpin_table();
           ++counter_.tuples_out;
           account_io(before);
           return result;
         }
       }
-      probe_record_.reset();
+      has_probe_record_ = false;
     }
   } catch (...) {
     state_ = State::FAILED;
@@ -437,7 +445,7 @@ void HashJoinOperator::cleanup_partition() {
       failure = std::current_exception();
     }
   }
-  probe_record_.reset();
+  has_probe_record_ = false;
   chain_ = 0;
   if (probe_reader_) {
     try {
@@ -476,11 +484,25 @@ void HashJoinOperator::cleanup_partition() {
   current_partition_.reset();
 }
 
-void HashJoinOperator::release_table() {
-  while (!table_pages_.empty()) {
-    buffer_pool_.unpin_page(*table_file_id_, table_pages_.size() - 1, true);
-    table_pages_.pop_back();
+void HashJoinOperator::pin_table() {
+  for (std::size_t id = 0; id < table_pages_.size(); ++id)
+    if (!table_pages_[id])
+      table_pages_[id] = &buffer_pool_.fetch_page(*table_file_id_, id);
+}
+
+void HashJoinOperator::unpin_table() {
+  for (std::size_t id = 0; id < table_pages_.size(); ++id) {
+    if (table_pages_[id]) {
+      buffer_pool_.unpin_page(*table_file_id_, id, table_dirty_);
+      table_pages_[id] = nullptr;
+    }
   }
+  table_dirty_ = false;
+}
+
+void HashJoinOperator::release_table() {
+  unpin_table();
+  table_pages_.clear();
   remove_file(table_file_id_);
 }
 

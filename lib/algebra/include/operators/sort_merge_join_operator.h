@@ -14,8 +14,6 @@
 namespace vql::algebra {
 class SortMergeJoinOperator : public Operator {
 public:
-  // Each pair specifies an equality between positions in the two input schemas.
-  // Multiple pairs form one composite key, compared in the listed order.
   struct Key {
     std::size_t left;
     std::size_t right;
@@ -31,10 +29,7 @@ public:
   const Schema &schema() const override;
   void open() override;
   void close() override;
-  // Output bytes survive until next next()/close(). Matching rows whose combined
-  // encoding exceeds the 4096-byte output page cause an error.
   std::optional<Tuple> next() override;
-  // Includes the two internal sorts, not their explicit child operators.
   Counter counters() const override;
 
 private:
@@ -46,13 +41,15 @@ private:
     std::size_t file_id{0};
     std::size_t page_count{0};
     Position next;
-    Position current;
+    std::optional<Position> current;
     Page *page{nullptr};
     std::optional<std::span<const char>> record;
   };
 
   void advance(Cursor &cursor);
   void rewind_right(Position position);
+  void unpin_cursor(Cursor &cursor);
+  void restore_cursor(Cursor &cursor);
   void close_cursor(Cursor &cursor);
   int compare_keys();
   int compare_left_to_output();

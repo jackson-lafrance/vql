@@ -32,7 +32,6 @@ JoinOperator::~JoinOperator() {
     try {
       close();
     } catch (...) {
-      // Explicit close reports errors and can be retried; destruction cannot throw.
     }
   }
 }
@@ -73,10 +72,15 @@ std::optional<Tuple> JoinOperator::next() {
 
   const auto before = buffer_pool_.stats();
   try {
+    pin_outer_block();
+    std::optional<std::span<const char>> right_record;
+    if (has_right_record_)
+      right_record = right_reader_->current();
+
     for (;;) {
-      if (!right_record_) {
-        right_record_ = right_reader_->next();
-        if (!right_record_) {
+      if (!right_record) {
+        right_record = right_reader_->next();
+        if (!right_record) {
           right_reader_.reset();
           release_outer_block();
           if (!load_outer_block()) {
@@ -90,17 +94,18 @@ std::optional<Tuple> JoinOperator::next() {
 
       const auto left_record = next_outer_record();
       if (!left_record) {
-        // The current right row has seen the whole block. Keep its page pinned
-        // until the next reader call, and start the next right row at block start.
-        right_record_.reset();
+        right_record.reset();
         outer_page_index_ = 0;
         outer_position_ = 2;
         continue;
       }
 
-      Tuple candidate = make_candidate(*left_record, *right_record_);
+      Tuple candidate = make_candidate(*left_record, *right_record);
       ++counter_.comparisons;
       if (condition_(candidate)) {
+        unpin_outer_block();
+        right_reader_->release_page();
+        has_right_record_ = true;
         ++counter_.tuples_out;
         account_io(before);
         return candidate;
@@ -119,13 +124,10 @@ bool JoinOperator::load_outer_block() {
 
   const std::size_t count = std::min(workspace_frames_ - 2,
                                     left_page_count_ - next_left_page_);
-  // Allocate metadata before fetching pages, so push_back cannot lose a pin.
   outer_pages_.reserve(count);
-  for (std::size_t i = 0; i < count; ++i) {
-    Page &page = buffer_pool_.fetch_page(left_file_id_, next_left_page_);
-    outer_pages_.push_back({next_left_page_, &page});
-    ++next_left_page_;
-  }
+  for (std::size_t i = 0; i < count; ++i)
+    outer_pages_.push_back({next_left_page_++, nullptr});
+  pin_outer_block();
   outer_page_index_ = 0;
   outer_position_ = 2;
   right_reader_ =
@@ -133,11 +135,24 @@ bool JoinOperator::load_outer_block() {
   return true;
 }
 
-void JoinOperator::release_outer_block() {
-  while (!outer_pages_.empty()) {
-    buffer_pool_.unpin_page(left_file_id_, outer_pages_.back().page_id, false);
-    outer_pages_.pop_back();
+void JoinOperator::pin_outer_block() {
+  for (auto &outer : outer_pages_)
+    if (outer.page == nullptr)
+      outer.page = &buffer_pool_.fetch_page(left_file_id_, outer.page_id);
+}
+
+void JoinOperator::unpin_outer_block() {
+  for (auto &outer : outer_pages_) {
+    if (outer.page != nullptr) {
+      buffer_pool_.unpin_page(left_file_id_, outer.page_id, false);
+      outer.page = nullptr;
+    }
   }
+}
+
+void JoinOperator::release_outer_block() {
+  unpin_outer_block();
+  outer_pages_.clear();
 }
 
 std::optional<std::span<const char>> JoinOperator::next_outer_record() {
@@ -173,7 +188,6 @@ void JoinOperator::close() {
   exhausted_ = true;
   std::exception_ptr failure;
   const auto before = buffer_pool_.stats();
-  right_record_.reset();
   if (right_reader_) {
     try {
       right_reader_->close();
@@ -196,7 +210,6 @@ void JoinOperator::close() {
   }
   account_io(before);
 
-  // The helper accounts for its own cleanup I/O. Do not count it twice here.
   try {
     inputs_.close();
   } catch (...) {

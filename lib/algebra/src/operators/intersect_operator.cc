@@ -115,6 +115,8 @@ std::optional<Tuple> IntersectOperator::next() {
     throw std::logic_error("Intersect can only be queried when open!");
 
   try {
+    left_tuple_ = left_->restore_current();
+    right_tuple_ = right_->restore_current();
     for (;;) {
       if (!left_tuple_)
         left_tuple_ = left_->next();
@@ -149,6 +151,10 @@ std::optional<Tuple> IntersectOperator::next() {
       Tuple result(
           schema_,
           std::span<const char>(*previous_page_).first(*previous_size_));
+      left_tuple_.reset();
+      right_tuple_.reset();
+      left_->release_current();
+      right_->release_current();
       ++counter_.tuples_out;
       return result;
     }

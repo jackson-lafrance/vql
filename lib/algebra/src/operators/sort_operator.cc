@@ -99,6 +99,31 @@ std::optional<Tuple> SortOperator::next() {
   }
 }
 
+void SortOperator::release_current() {
+  if (!pending_advance_)
+    return;
+  MergeInput &input = merge_inputs_[*pending_advance_];
+  input.record.reset();
+  input.reader->release_page();
+}
+
+std::optional<Tuple> SortOperator::restore_current() {
+  if (!pending_advance_)
+    return std::nullopt;
+  const auto before = buffer_pool_.stats();
+  try {
+    MergeInput &input = merge_inputs_[*pending_advance_];
+    input.record = input.reader->current();
+    auto row = switcher::decode(*input.record, schema_);
+    account_io(before);
+    return row;
+  } catch (...) {
+    account_io(before);
+    state_ = State::FAILED;
+    throw;
+  }
+}
+
 void SortOperator::close() {
   if (state_ != State::OPEN && state_ != State::FAILED)
     throw std::logic_error("Sort can only be closed when open or failed!");

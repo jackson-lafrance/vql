@@ -25,6 +25,12 @@ public:
   Counter counters() const override;
 
 private:
+  friend class ExceptOperator;
+  friend class IntersectOperator;
+
+  void release_current();
+  std::optional<Tuple> restore_current();
+
   struct RecordPosition {
     std::size_t page_id;
     std::size_t offset;

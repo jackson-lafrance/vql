@@ -14,8 +14,6 @@
 #include <vector>
 
 namespace vql::algebra {
-// Block nested-loop join. The workspace includes the outer block, one inner
-// page, and one output page. Child outputs are saved before this workspace opens.
 class JoinOperator : public Operator {
 public:
   JoinOperator(std::unique_ptr<Operator> left,
@@ -28,8 +26,6 @@ public:
   const Schema &schema() const override;
   void open() override;
   void close() override;
-  // Returned bytes are valid until the next next() or close(). Candidates larger
-  // than the 4096-byte output page cause an error, even if they would not match.
   std::optional<Tuple> next() override;
   Counter counters() const override;
 
@@ -40,6 +36,8 @@ private:
   };
 
   bool load_outer_block();
+  void pin_outer_block();
+  void unpin_outer_block();
   void release_outer_block();
   std::optional<std::span<const char>> next_outer_record();
   Tuple make_candidate(std::span<const char> left,
@@ -60,7 +58,7 @@ private:
   std::size_t outer_page_index_{0};
   std::size_t outer_position_{2};
   std::unique_ptr<storage::TempFileReader> right_reader_;
-  std::optional<std::span<const char>> right_record_;
+  bool has_right_record_{false};
   std::optional<std::size_t> output_file_id_;
   Page *output_page_{nullptr};
   bool output_dirty_{false};
