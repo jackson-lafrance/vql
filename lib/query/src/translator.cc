@@ -27,19 +27,6 @@ std::string Translator::column_text(const ColumnRef &column) const {
   return column.qualifier->name + "." + column.name.name;
 }
 
-std::string Translator::literal_text(const Literal &literal) const {
-  if (const auto *integer = std::get_if<std::int32_t>(&literal.value))
-    return std::to_string(*integer);
-  std::string text = "'";
-  for (char character : std::get<std::string>(literal.value)) {
-    if (character == '\'')
-      text += '\'';
-    text += character;
-  }
-  text += '\'';
-  return text;
-}
-
 bool Translator::columns_match(const ColumnRef &left,
                                const ColumnRef &right) const {
   return left.qualifier && right.qualifier && left.resolved_position &&
@@ -142,67 +129,6 @@ void Translator::collect_having(
     collect_having(*logical.left, keys, aggregates);
     collect_having(*logical.right, keys, aggregates);
   }
-}
-
-std::string Translator::operand_text(
-    const Operand &operand,
-    const std::vector<AggregateBinding> &aggregates) const {
-  if (const auto *column = std::get_if<ColumnRef>(&operand))
-    return column_text(*column);
-  if (const auto *literal = std::get_if<Literal>(&operand))
-    return literal_text(*literal);
-  const auto &aggregate = std::get<AggregateCall>(operand);
-  return aggregates[aggregate_position(aggregate, aggregates)].name;
-}
-
-std::string Translator::condition_text(
-    const Condition &condition,
-    const std::vector<AggregateBinding> &aggregates) const {
-  if (const auto *comparison = std::get_if<Comparison>(&condition.value)) {
-    std::string op;
-    switch (comparison->op) {
-    case ComparisonOperator::EQUAL:
-      op = "=";
-      break;
-    case ComparisonOperator::NOT_EQUAL:
-      op = "<>";
-      break;
-    case ComparisonOperator::LESS_THAN:
-      op = "<";
-      break;
-    case ComparisonOperator::LESS_THAN_OR_EQUAL:
-      op = "<=";
-      break;
-    case ComparisonOperator::GREATER_THAN:
-      op = ">";
-      break;
-    case ComparisonOperator::GREATER_THAN_OR_EQUAL:
-      op = ">=";
-      break;
-    default:
-      throw std::logic_error("Unknown comparison operator during translation!");
-    }
-    return operand_text(comparison->left, aggregates) + " " + op + " " +
-           operand_text(comparison->right, aggregates);
-  }
-  if (const auto *negation = std::get_if<NotCondition>(&condition.value)) {
-    if (!negation->child)
-      throw std::logic_error("Cannot translate NOT without a child!");
-    return "not (" + condition_text(*negation->child, aggregates) + ")";
-  }
-  const auto &logical = std::get<LogicalCondition>(condition.value);
-  if (!logical.left || !logical.right)
-    throw std::logic_error(
-        "Cannot translate a condition with missing children!");
-  std::string op;
-  if (logical.op == LogicalOperator::AND)
-    op = " and ";
-  else if (logical.op == LogicalOperator::OR)
-    op = " or ";
-  else
-    throw std::logic_error("Unknown logical operator during translation!");
-  return "(" + condition_text(*logical.left, aggregates) + op +
-         condition_text(*logical.right, aggregates) + ")";
 }
 
 Json::Value Translator::condition_json(

@@ -13,8 +13,7 @@
 #include <utility>
 #include <vector>
 
-namespace vql::query {
-namespace {
+namespace vql::query::optimizer_detail {
 
 using Names = std::set<std::string>;
 
@@ -139,54 +138,6 @@ void replace_qualifier(Json::Value &node, const std::string &from,
   for (const char *key : {"left", "right", "child"})
     if (node.isMember(key))
       replace_qualifier(node[key], from, to);
-}
-
-std::string quote_string(const std::string &value) {
-  std::string result = "'";
-  for (char character : value) {
-    if (character == '\'')
-      result += '\'';
-    result += character;
-  }
-  result += '\'';
-  return result;
-}
-
-std::string operand_text(const Json::Value &operand) {
-  if (!operand.isObject() || !operand["kind"].isString())
-    throw std::invalid_argument("Physical lowering found an invalid condition operand!");
-  const std::string kind = operand["kind"].asString();
-  if (kind == "column" && operand["name"].isString())
-    return operand["name"].asString();
-  if (kind == "integer" && operand["value"].isInt())
-    return std::to_string(operand["value"].asInt());
-  if (kind == "varchar" && operand["value"].isString())
-    return quote_string(operand["value"].asString());
-  if (kind == "aggregate" && operand["name"].isString())
-    return operand["name"].asString();
-  throw std::invalid_argument("Physical lowering found an invalid condition operand!");
-}
-
-std::string condition_text(const Json::Value &node) {
-  if (!node.isObject() || !node["kind"].isString())
-    throw std::invalid_argument("Physical lowering requires structured conditions!");
-  const std::string kind = node["kind"].asString();
-  if (kind == "comparison") {
-    if (!node["operator"].isString())
-      throw std::invalid_argument("Comparison condition has no operator!");
-    return operand_text(node["left"]) + " " + node["operator"].asString() + " " +
-           operand_text(node["right"]);
-  }
-  if (kind == "not")
-    return "not (" + condition_text(node["child"]) + ")";
-  if (kind == "logical") {
-    if (!node["operator"].isString())
-      throw std::invalid_argument("Logical condition has no operator!");
-    return "(" + condition_text(node["left"]) + " " +
-           node["operator"].asString() + " " + condition_text(node["right"]) +
-           ")";
-  }
-  throw std::invalid_argument("Physical lowering found an unknown condition kind!");
 }
 
 bool is_equality_condition(const Json::Value &node, const Names &left,
@@ -628,7 +579,7 @@ std::size_t estimated_size(const Json::Value &node, const char *field) {
 
 Json::Value make_physical(const std::string &op, const Json::Value &left,
                           const Json::Value &right,
-                          const std::string &condition) {
+                          const Json::Value &condition) {
   Json::Value node(Json::objectValue);
   node["op"] = op;
   node["condition"] = condition;
@@ -637,7 +588,21 @@ Json::Value make_physical(const std::string &op, const Json::Value &left,
   return node;
 }
 
-} // namespace
+Json::Value unconditional_join_predicate() {
+  Json::Value one(Json::objectValue);
+  one["kind"] = "integer";
+  one["value"] = 1;
+  Json::Value comparison(Json::objectValue);
+  comparison["kind"] = "comparison";
+  comparison["operator"] = "=";
+  comparison["left"] = one;
+  comparison["right"] = std::move(one);
+  return comparison;
+}
+
+} // namespace vql::query::optimizer_detail
+
+namespace vql::query {
 
 Optimizer::Optimizer(const storage::Catalog &catalog,
                      const StatisticsCollector &statistics,
@@ -650,6 +615,7 @@ Optimizer::Optimizer(const storage::Catalog &catalog,
 }
 
 Json::Value Optimizer::optimize(const Json::Value &logical_plan) const {
+  using namespace optimizer_detail;
   JsonPlanEstimator estimator(catalog_, statistics_, fallbacks_);
   CostModel costs(workspace_frames_);
 
@@ -670,7 +636,7 @@ Json::Value Optimizer::optimize(const Json::Value &logical_plan) const {
       result["to"] = node["to"];
     } else if (op == "select") {
       result = unary("filter", lower(node["child"]));
-      result["condition"] = condition_text(node["condition"]);
+      result["condition"] = node["condition"];
     } else if (op == "project") {
       Json::Value columns(Json::arrayValue);
       for (const Json::Value &column : node["columns"])
@@ -776,7 +742,7 @@ Json::Value Optimizer::optimize(const Json::Value &logical_plan) const {
         if (residual_terms.empty())
           return physical;
         Json::Value filter = unary("filter", std::move(physical));
-        filter["condition"] = condition_text(join_terms(residual_terms));
+        filter["condition"] = join_terms(residual_terms);
         return filter;
       }
     }
@@ -911,7 +877,7 @@ Json::Value Optimizer::optimize(const Json::Value &logical_plan) const {
             candidate.physical = make_physical(
                 choice.op, best[left_mask]->physical,
                 leaves[right_index].physical,
-                crossing.empty() ? "1 = 1" : condition_text(condition));
+                crossing.empty() ? unconditional_join_predicate() : condition);
             if (!chosen || candidate.cost < chosen->cost)
               chosen = std::move(candidate);
           }
@@ -945,7 +911,7 @@ Json::Value Optimizer::optimize(const Json::Value &logical_plan) const {
     Json::Value physical = best[full]->physical;
     if (!constant_predicates.empty()) {
       Json::Value filter = unary("filter", std::move(physical));
-      filter["condition"] = condition_text(join_terms(constant_predicates));
+      filter["condition"] = join_terms(constant_predicates);
       physical = std::move(filter);
     }
     return physical;

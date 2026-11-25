@@ -22,13 +22,6 @@ private:
   Json::Value translate_from(const FromClause &from) const;
 
   std::string column_text(const ColumnRef &column) const;
-  std::string literal_text(const Literal &literal) const;
-  std::string
-  operand_text(const Operand &operand,
-               const std::vector<AggregateBinding> &aggregates) const;
-  std::string
-  condition_text(const Condition &condition,
-                 const std::vector<AggregateBinding> &aggregates) const;
   Json::Value
   condition_json(const Condition &condition,
                  const std::vector<AggregateBinding> &aggregates) const;
