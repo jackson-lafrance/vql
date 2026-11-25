@@ -29,6 +29,9 @@ private:
   std::string
   condition_text(const Condition &condition,
                  const std::vector<AggregateBinding> &aggregates) const;
+  Json::Value
+  condition_json(const Condition &condition,
+                 const std::vector<AggregateBinding> &aggregates) const;
   std::string aggregate_function(AggregateFunction function) const;
   bool columns_match(const ColumnRef &left, const ColumnRef &right) const;
   bool aggregates_match(const AggregateCall &left,

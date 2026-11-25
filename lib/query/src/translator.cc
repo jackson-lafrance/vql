@@ -205,6 +205,81 @@ std::string Translator::condition_text(
          condition_text(*logical.right, aggregates) + ")";
 }
 
+Json::Value Translator::condition_json(
+    const Condition &condition,
+    const std::vector<AggregateBinding> &aggregates) const {
+  auto operand_json = [&](const Operand &operand) {
+    Json::Value node(Json::objectValue);
+    if (const auto *column = std::get_if<ColumnRef>(&operand)) {
+      node["kind"] = "column";
+      node["name"] = column_text(*column);
+    } else if (const auto *literal = std::get_if<Literal>(&operand)) {
+      if (const auto *integer = std::get_if<std::int32_t>(&literal->value)) {
+        node["kind"] = "integer";
+        node["value"] = *integer;
+      } else {
+        node["kind"] = "varchar";
+        node["value"] = std::get<std::string>(literal->value);
+      }
+    } else {
+      const auto &aggregate = std::get<AggregateCall>(operand);
+      node["kind"] = "aggregate";
+      node["name"] = aggregates[aggregate_position(aggregate, aggregates)].name;
+    }
+    return node;
+  };
+
+  if (const auto *comparison = std::get_if<Comparison>(&condition.value)) {
+    Json::Value node(Json::objectValue);
+    node["kind"] = "comparison";
+    switch (comparison->op) {
+    case ComparisonOperator::EQUAL:
+      node["operator"] = "=";
+      break;
+    case ComparisonOperator::NOT_EQUAL:
+      node["operator"] = "<>";
+      break;
+    case ComparisonOperator::LESS_THAN:
+      node["operator"] = "<";
+      break;
+    case ComparisonOperator::LESS_THAN_OR_EQUAL:
+      node["operator"] = "<=";
+      break;
+    case ComparisonOperator::GREATER_THAN:
+      node["operator"] = ">";
+      break;
+    case ComparisonOperator::GREATER_THAN_OR_EQUAL:
+      node["operator"] = ">=";
+      break;
+    default:
+      throw std::logic_error("Unknown comparison during JSON translation!");
+    }
+    node["left"] = operand_json(comparison->left);
+    node["right"] = operand_json(comparison->right);
+    return node;
+  }
+
+  if (const auto *negation = std::get_if<NotCondition>(&condition.value)) {
+    if (!negation->child)
+      throw std::logic_error("Cannot translate NOT without a child!");
+    Json::Value node(Json::objectValue);
+    node["kind"] = "not";
+    node["child"] = condition_json(*negation->child, aggregates);
+    return node;
+  }
+
+  const auto &logical = std::get<LogicalCondition>(condition.value);
+  if (!logical.left || !logical.right)
+    throw std::logic_error(
+        "Cannot translate a condition with missing children!");
+  Json::Value node(Json::objectValue);
+  node["kind"] = "logical";
+  node["operator"] = logical.op == LogicalOperator::AND ? "and" : "or";
+  node["left"] = condition_json(*logical.left, aggregates);
+  node["right"] = condition_json(*logical.right, aggregates);
+  return node;
+}
+
 std::string Translator::table_name(const TableRef &table) const {
   if (!table.output_schema)
     throw std::logic_error("Translation requires a resolved table reference!");
@@ -287,7 +362,7 @@ Json::Value Translator::translate_from(const FromClause &from) const {
   for (const JoinClause &join : joined.joins) {
     Json::Value node(Json::objectValue);
     node["op"] = "join";
-    node["condition"] = condition_text(join.on, {});
+    node["condition"] = condition_json(join.on, {});
     node["left"] = std::move(plan);
     node["right"] = translate_table(join.right);
     plan = std::move(node);
@@ -315,7 +390,7 @@ Json::Value Translator::translate_select(const SelectBlock &select) const {
   Json::Value plan = translate_from(select.from);
   if (select.where) {
     Json::Value node = logical_unary("select", std::move(plan));
-    node["condition"] = condition_text(*select.where, {});
+    node["condition"] = condition_json(*select.where, {});
     plan = std::move(node);
   }
 
@@ -344,7 +419,8 @@ Json::Value Translator::translate_select(const SelectBlock &select) const {
     plan = std::move(group);
     if (select.group_by && select.group_by->having) {
       Json::Value node = logical_unary("select", std::move(plan));
-      node["condition"] = condition_text(*select.group_by->having, aggregates);
+      node["condition"] =
+          condition_json(*select.group_by->having, aggregates);
       plan = std::move(node);
     }
   } else if (const auto *comma = std::get_if<CommaFrom>(&select.from)) {
