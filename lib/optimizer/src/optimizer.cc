@@ -154,8 +154,7 @@ bool is_equality_condition(const Json::Value &node, const Names &left,
   const Json::Value &a = node["left"];
   const Json::Value &b = node["right"];
   if (!a.isObject() || !b.isObject() || a["kind"] != "column" ||
-      b["kind"] != "column" || !a["name"].isString() ||
-      !b["name"].isString())
+      b["kind"] != "column" || !a["name"].isString() || !b["name"].isString())
     return false;
   Names refs_a, refs_b;
   condition_references(a, refs_a);
@@ -195,7 +194,8 @@ Json::Value rewrite(Json::Value node, const storage::Catalog &catalog) {
   if (op == "join") {
     if (!node["left"].isObject() || !node["right"].isObject() ||
         !node["condition"].isObject())
-      throw std::invalid_argument("Join node requires two inputs and a condition!");
+      throw std::invalid_argument(
+          "Join node requires two inputs and a condition!");
     std::vector<Json::Value> terms;
     split_and(node["condition"], terms);
     std::vector<Json::Value> remaining;
@@ -221,8 +221,8 @@ Json::Value rewrite(Json::Value node, const storage::Catalog &catalog) {
   }
 
   if (op == "select" && node["child"]["op"] == "select") {
-    node["condition"] = and_condition(node["condition"],
-                                      node["child"]["condition"]);
+    node["condition"] =
+        and_condition(node["condition"], node["child"]["condition"]);
     node["child"] = node["child"]["child"];
   }
   if (op == "project" && node["child"]["op"] == "project" &&
@@ -264,11 +264,9 @@ Json::Value push_selection(Json::Value child, const Json::Value &condition,
   Names refs;
   condition_references(condition, refs);
 
-  if (op == "rename" && child["child"].isObject() &&
-      child["to"].isString()) {
+  if (op == "rename" && child["child"].isObject() && child["to"].isString()) {
     const std::string alias = child["to"].asString();
-    const std::string underlying =
-        rename_qualifier(child["child"], alias);
+    const std::string underlying = rename_qualifier(child["child"], alias);
     Json::Value rewritten_condition = condition;
     replace_qualifier(rewritten_condition, alias, underlying);
     if (underlying == alias) {
@@ -276,13 +274,13 @@ Json::Value push_selection(Json::Value child, const Json::Value &condition,
       select["condition"] = condition;
       return select;
     }
-    child["child"] = push_selection(std::move(child["child"]),
-                                    rewritten_condition, catalog);
+    child["child"] =
+        push_selection(std::move(child["child"]), rewritten_condition, catalog);
     return child;
   }
 
-  if ((op == "union" || op == "union_all") &&
-      child["left"].isObject() && child["right"].isObject()) {
+  if ((op == "union" || op == "union_all") && child["left"].isObject() &&
+      child["right"].isObject()) {
     const std::vector<std::string> left_columns =
         output_columns(child["left"], catalog);
     const std::vector<std::string> right_columns =
@@ -290,10 +288,10 @@ Json::Value push_selection(Json::Value child, const Json::Value &condition,
     if (left_columns.size() == right_columns.size()) {
       Json::Value right_condition = condition;
       remap_union_condition(right_condition, left_columns, right_columns);
-      child["left"] = push_selection(std::move(child["left"]), condition,
-                                     catalog);
-      child["right"] = push_selection(std::move(child["right"]),
-                                      right_condition, catalog);
+      child["left"] =
+          push_selection(std::move(child["left"]), condition, catalog);
+      child["right"] =
+          push_selection(std::move(child["right"]), right_condition, catalog);
       return child;
     }
   }
@@ -304,10 +302,9 @@ Json::Value push_selection(Json::Value child, const Json::Value &condition,
       if (key.isString())
         keys.insert(key.asString());
     condition_column_names(condition, referenced_columns);
-    if (!referenced_columns.empty() &&
-        contains_all(keys, referenced_columns)) {
-      child["child"] = push_selection(std::move(child["child"]), condition,
-                                      catalog);
+    if (!referenced_columns.empty() && contains_all(keys, referenced_columns)) {
+      child["child"] =
+          push_selection(std::move(child["child"]), condition, catalog);
       return child;
     }
   }
@@ -319,17 +316,17 @@ Json::Value push_selection(Json::Value child, const Json::Value &condition,
     const bool left_only = !refs.empty() && contains_all(left_names, refs);
     const bool right_only = !refs.empty() && contains_all(right_names, refs);
     if (left_only) {
-      child["left"] = push_selection(std::move(child["left"]), condition,
-                                      catalog);
+      child["left"] =
+          push_selection(std::move(child["left"]), condition, catalog);
       return child;
     }
     if (right_only) {
-      child["right"] = push_selection(std::move(child["right"]), condition,
-                                      catalog);
+      child["right"] =
+          push_selection(std::move(child["right"]), condition, catalog);
       return child;
     }
-    if (op == "cross" && is_equality_condition(condition, left_names,
-                                                right_names)) {
+    if (op == "cross" &&
+        is_equality_condition(condition, left_names, right_names)) {
       child["op"] = "join";
       child["condition"] = condition;
       return child;
@@ -337,17 +334,18 @@ Json::Value push_selection(Json::Value child, const Json::Value &condition,
     Names both_names = left_names;
     both_names.insert(right_names.begin(), right_names.end());
     const bool references_both_sides =
-        std::any_of(refs.begin(), refs.end(), [&](const std::string &ref) {
-          return left_names.count(ref) != 0;
-        }) &&
+        std::any_of(refs.begin(), refs.end(),
+                    [&](const std::string &ref) {
+                      return left_names.count(ref) != 0;
+                    }) &&
         std::any_of(refs.begin(), refs.end(), [&](const std::string &ref) {
           return right_names.count(ref) != 0;
         });
     if (op == "join" && references_both_sides &&
         contains_all(both_names, refs)) {
       child["condition"] = child["condition"].isObject()
-                                ? and_condition(child["condition"], condition)
-                                : condition;
+                               ? and_condition(child["condition"], condition)
+                               : condition;
       return child;
     }
   }
@@ -386,7 +384,8 @@ void collect_required(const Json::Value &node, Names &required) {
       collect_required(node[key], required);
 }
 
-Json::Value scan_projection(const Json::Value &scan, const std::string &qualifier,
+Json::Value scan_projection(const Json::Value &scan,
+                            const std::string &qualifier,
                             const storage::Catalog &catalog,
                             const Names &required) {
   if (!scan["table"].isString())
@@ -437,7 +436,8 @@ std::vector<std::string> output_columns(const Json::Value &node,
     std::vector<std::string> result;
     for (Json::ArrayIndex i = 0; i < node["columns"].size(); ++i) {
       const Json::Value &alias = node["aliases"];
-      result.push_back(alias.isArray() && i < alias.size() && alias[i].isString()
+      result.push_back(alias.isArray() && i < alias.size() &&
+                               alias[i].isString()
                            ? alias[i].asString()
                            : node["columns"][i].asString());
     }
@@ -453,7 +453,8 @@ std::vector<std::string> output_columns(const Json::Value &node,
       if (key.isString())
         result.push_back(key.asString());
     for (const Json::Value &aggregate : node["aggregates"])
-      if (aggregate.isArray() && aggregate.size() == 3 && aggregate[2].isString())
+      if (aggregate.isArray() && aggregate.size() == 3 &&
+          aggregate[2].isString())
         result.push_back(aggregate[2].asString());
     return result;
   }
@@ -476,8 +477,7 @@ Json::Value remove_noop_projects(Json::Value node,
     if (node[key].isObject())
       node[key] = remove_noop_projects(node[key], catalog);
   if (node["op"] != "project" || !node["child"].isObject() ||
-      (node["hidden_columns"].isArray() &&
-       !node["hidden_columns"].empty()) ||
+      (node["hidden_columns"].isArray() && !node["hidden_columns"].empty()) ||
       node["aliases"].isArray())
     return node;
   const std::vector<std::string> child_columns =
@@ -505,8 +505,8 @@ Json::Value push_alias_projection(Json::Value node, const std::string &alias,
   if (node["op"] == "scan")
     return scan_projection(node, alias, catalog, required);
   if (node["op"] == "select")
-    node["child"] = push_alias_projection(node["child"], alias, catalog,
-                                           required);
+    node["child"] =
+        push_alias_projection(node["child"], alias, catalog, required);
   return node;
 }
 
@@ -515,10 +515,10 @@ Json::Value push_projections(Json::Value node, const storage::Catalog &catalog,
   if (!node.isObject() || !node["op"].isString())
     return node;
   const std::string op = node["op"].asString();
-  if (op == "rename" && node["child"].isObject() &&
-      node["to"].isString() && simple_filter_scan(node["child"])) {
+  if (op == "rename" && node["child"].isObject() && node["to"].isString() &&
+      simple_filter_scan(node["child"])) {
     node["child"] = push_alias_projection(node["child"], node["to"].asString(),
-                                           catalog, required);
+                                          catalog, required);
     return node;
   }
   if (op == "scan")
@@ -555,8 +555,8 @@ struct Candidate {
 
 void flatten_join(const Json::Value &node, std::vector<Json::Value> &leaves,
                   std::vector<Json::Value> &conditions) {
-  if (node.isObject() && node["op"] == "join" &&
-      node["left"].isObject() && node["right"].isObject()) {
+  if (node.isObject() && node["op"] == "join" && node["left"].isObject() &&
+      node["right"].isObject()) {
     flatten_join(node["left"], leaves, conditions);
     flatten_join(node["right"], leaves, conditions);
     std::vector<Json::Value> terms;
@@ -573,7 +573,8 @@ void flatten_join(const Json::Value &node, std::vector<Json::Value> &leaves,
 
 std::size_t estimated_size(const Json::Value &node, const char *field) {
   if (!node[field].isUInt64() && !node[field].isInt64())
-    throw std::invalid_argument(std::string("Missing estimate field '") + field + "'!");
+    throw std::invalid_argument(std::string("Missing estimate field '") +
+                                field + "'!");
   return static_cast<std::size_t>(node[field].asUInt64());
 }
 
@@ -606,8 +607,7 @@ namespace vql::query {
 
 Optimizer::Optimizer(const storage::Catalog &catalog,
                      const StatisticsCollector &statistics,
-                     std::size_t workspace_frames,
-                     EstimatorFallbacks fallbacks)
+                     std::size_t workspace_frames, EstimatorFallbacks fallbacks)
     : catalog_(catalog), statistics_(statistics),
       workspace_frames_(workspace_frames), fallbacks_(fallbacks) {
   if (workspace_frames_ == 0)
@@ -615,7 +615,17 @@ Optimizer::Optimizer(const storage::Catalog &catalog,
 }
 
 Json::Value Optimizer::optimize(const Json::Value &logical_plan) const {
-  using namespace optimizer_detail;
+  return optimize_impl(logical_plan, nullptr);
+}
+
+Json::Value Optimizer::dp_table(const Json::Value &logical_plan) const {
+  Json::Value rows(Json::arrayValue);
+  (void)optimize_impl(logical_plan, &rows);
+  return rows;
+}
+
+Json::Value Optimizer::optimize_impl(const Json::Value &logical_plan,
+                                     Json::Value *dp_rows) const {
   JsonPlanEstimator estimator(catalog_, statistics_, fallbacks_);
   CostModel costs(workspace_frames_);
 
@@ -632,10 +642,10 @@ Json::Value Optimizer::optimize(const Json::Value &logical_plan) const {
       result["op"] = "seqscan";
       result["table"] = node["table"];
     } else if (op == "rename") {
-      result = unary("rename", lower(node["child"]));
+      result = optimizer_detail::unary("rename", lower(node["child"]));
       result["to"] = node["to"];
     } else if (op == "select") {
-      result = unary("filter", lower(node["child"]));
+      result = optimizer_detail::unary("filter", lower(node["child"]));
       result["condition"] = node["condition"];
     } else if (op == "project") {
       Json::Value columns(Json::arrayValue);
@@ -643,9 +653,10 @@ Json::Value Optimizer::optimize(const Json::Value &logical_plan) const {
         columns.append(column);
       if (node["hidden_columns"].isArray())
         for (const Json::Value &column : node["hidden_columns"])
-          if (std::find(columns.begin(), columns.end(), column) == columns.end())
+          if (std::find(columns.begin(), columns.end(), column) ==
+              columns.end())
             columns.append(column);
-      result = unary("project", lower(node["child"]));
+      result = optimizer_detail::unary("project", lower(node["child"]));
       result["columns"] = std::move(columns);
       if (node["aliases"].isArray()) {
         Json::Value aliases = node["aliases"];
@@ -658,12 +669,12 @@ Json::Value Optimizer::optimize(const Json::Value &logical_plan) const {
       }
     } else if (op == "sort") {
       Json::Value child = lower(node["child"]);
-      result = unary("sort", child);
+      result = optimizer_detail::unary("sort", child);
       result["keys"] = node["keys"];
       if (node["child"]["op"] == "project" &&
           node["child"]["hidden_columns"].isArray() &&
           !node["child"]["hidden_columns"].empty()) {
-        Json::Value output = unary("project", result);
+        Json::Value output = optimizer_detail::unary("project", result);
         output["columns"] = Json::Value(Json::arrayValue);
         for (Json::ArrayIndex i = 0; i < node["child"]["columns"].size(); ++i) {
           const Json::Value &aliases = node["child"]["aliases"];
@@ -675,23 +686,23 @@ Json::Value Optimizer::optimize(const Json::Value &logical_plan) const {
         result = std::move(output);
       }
     } else if (op == "limit") {
-      result = unary("limit", lower(node["child"]));
+      result = optimizer_detail::unary("limit", lower(node["child"]));
       result["count"] = node["count"];
     } else if (op == "distinct") {
       const Json::Value annotated = estimator.estimate(node);
-      const std::size_t pages = estimated_size(annotated, "est_pages");
+      const std::size_t pages =
+          optimizer_detail::estimated_size(annotated, "est_pages");
       const std::size_t sort_cost = costs.sort(pages);
-      const std::size_t hash_cost =
-          pages == 0 ? 0 : costs.hash_join(pages, 0);
-      result = unary("distinct", lower(node["child"]));
+      const std::size_t hash_cost = pages == 0 ? 0 : costs.hash_join(pages, 0);
+      result = optimizer_detail::unary("distinct", lower(node["child"]));
       result["mode"] = hash_cost < sort_cost ? "hash" : "sort";
     } else if (op == "group_by") {
       const Json::Value annotated = estimator.estimate(node);
-      const std::size_t pages = estimated_size(annotated["child"], "est_pages");
+      const std::size_t pages =
+          optimizer_detail::estimated_size(annotated["child"], "est_pages");
       const std::size_t sort_cost = costs.sort(pages);
-      const std::size_t hash_cost =
-          pages == 0 ? 0 : costs.hash_join(pages, 0);
-      result = unary("group_by", lower(node["child"]));
+      const std::size_t hash_cost = pages == 0 ? 0 : costs.hash_join(pages, 0);
+      result = optimizer_detail::unary("group_by", lower(node["child"]));
       result["mode"] = hash_cost < sort_cost ? "hash" : "sort";
       result["keys"] = node["keys"];
       result["aggregates"] = node["aggregates"];
@@ -703,8 +714,8 @@ Json::Value Optimizer::optimize(const Json::Value &logical_plan) const {
     } else if (op == "join" || op == "cross") {
       return optimize_tree(node);
     } else {
-      throw std::invalid_argument("Physical lowering does not support logical operator '" +
-                                  op + "'!");
+      throw std::invalid_argument(
+          "Physical lowering does not support logical operator '" + op + "'!");
     }
     return result;
   };
@@ -715,17 +726,19 @@ Json::Value Optimizer::optimize(const Json::Value &logical_plan) const {
     if (node["op"] == "select" &&
         (node["child"]["op"] == "join" || node["child"]["op"] == "cross")) {
       std::vector<Json::Value> terms;
-      split_and(node["condition"], terms);
-      const Names relations = relation_names(node["child"]);
+      optimizer_detail::split_and(node["condition"], terms);
+      const optimizer_detail::Names relations =
+          optimizer_detail::relation_names(node["child"]);
       std::vector<Json::Value> join_terms_for_plan;
       std::vector<Json::Value> residual_terms;
       for (const Json::Value &term : terms) {
-        Names references;
-        condition_references(term, references);
+        optimizer_detail::Names references;
+        optimizer_detail::condition_references(term, references);
         std::size_t relation_count = 0;
         for (const std::string &reference : references)
           relation_count += relations.count(reference) != 0;
-        if (contains_all(relations, references) && relation_count > 1)
+        if (optimizer_detail::contains_all(relations, references) &&
+            relation_count > 1)
           join_terms_for_plan.push_back(term);
         else
           residual_terms.push_back(term);
@@ -734,15 +747,18 @@ Json::Value Optimizer::optimize(const Json::Value &logical_plan) const {
         Json::Value logical_join = node["child"];
         if (logical_join["op"] == "cross")
           logical_join["op"] = "join";
-        logical_join["condition"] = logical_join["condition"].isObject()
-                                         ? and_condition(logical_join["condition"],
-                                                         join_terms(join_terms_for_plan))
-                                         : join_terms(join_terms_for_plan);
+        logical_join["condition"] =
+            logical_join["condition"].isObject()
+                ? optimizer_detail::and_condition(
+                      logical_join["condition"],
+                      optimizer_detail::join_terms(join_terms_for_plan))
+                : optimizer_detail::join_terms(join_terms_for_plan);
         Json::Value physical = optimize_tree(logical_join);
         if (residual_terms.empty())
           return physical;
-        Json::Value filter = unary("filter", std::move(physical));
-        filter["condition"] = join_terms(residual_terms);
+        Json::Value filter =
+            optimizer_detail::unary("filter", std::move(physical));
+        filter["condition"] = optimizer_detail::join_terms(residual_terms);
         return filter;
       }
     }
@@ -751,35 +767,38 @@ Json::Value Optimizer::optimize(const Json::Value &logical_plan) const {
 
     std::vector<Json::Value> raw_leaves;
     std::vector<Json::Value> predicates;
-    flatten_join(node, raw_leaves, predicates);
+    optimizer_detail::flatten_join(node, raw_leaves, predicates);
     std::vector<Json::Value> constant_predicates;
-    predicates.erase(
-        std::remove_if(predicates.begin(), predicates.end(),
-                       [&](const Json::Value &predicate) {
-                         Names references;
-                         condition_references(predicate, references);
-                         if (!references.empty())
-                           return false;
-                         constant_predicates.push_back(predicate);
-                         return true;
-                       }),
-        predicates.end());
+    predicates.erase(std::remove_if(predicates.begin(), predicates.end(),
+                                    [&](const Json::Value &predicate) {
+                                      optimizer_detail::Names references;
+                                      optimizer_detail::condition_references(
+                                          predicate, references);
+                                      if (!references.empty())
+                                        return false;
+                                      constant_predicates.push_back(predicate);
+                                      return true;
+                                    }),
+                     predicates.end());
     if (raw_leaves.empty() || raw_leaves.size() > 6)
-      throw std::invalid_argument("Join enumeration supports one to six relations!");
+      throw std::invalid_argument(
+          "Join enumeration supports one to six relations!");
 
-    std::vector<JoinLeaf> leaves;
+    std::vector<optimizer_detail::JoinLeaf> leaves;
     leaves.reserve(raw_leaves.size());
     for (const Json::Value &raw : raw_leaves) {
       Json::Value logical = raw;
       Json::Value annotated = estimator.estimate(logical);
-      JoinLeaf leaf;
+      optimizer_detail::JoinLeaf leaf;
       leaf.logical = std::move(logical);
       leaf.physical = lower(leaf.logical);
-      leaf.relations = relation_names(raw);
+      leaf.relations = optimizer_detail::relation_names(raw);
       if (leaf.relations.empty())
-        leaf.relations = relation_names(leaf.logical);
-      leaf.estimate.num_tuples = estimated_size(annotated, "est_rows");
-      leaf.estimate.num_pages = estimated_size(annotated, "est_pages");
+        leaf.relations = optimizer_detail::relation_names(leaf.logical);
+      leaf.estimate.num_tuples =
+          optimizer_detail::estimated_size(annotated, "est_rows");
+      leaf.estimate.num_pages =
+          optimizer_detail::estimated_size(annotated, "est_pages");
       const Json::Value width = annotated["est_width"];
       leaf.estimate.width = width.isNumeric() ? width.asDouble() : 0.0;
       leaves.push_back(std::move(leaf));
@@ -787,10 +806,10 @@ Json::Value Optimizer::optimize(const Json::Value &logical_plan) const {
 
     const std::size_t count = leaves.size();
     const std::size_t state_count = std::size_t{1} << count;
-    std::vector<std::optional<Candidate>> best(state_count);
+    std::vector<std::optional<optimizer_detail::Candidate>> best(state_count);
     for (std::size_t i = 0; i < count; ++i) {
       const std::size_t mask = std::size_t{1} << i;
-      Candidate base;
+      optimizer_detail::Candidate base;
       base.logical = leaves[i].logical;
       base.physical = leaves[i].physical;
       base.estimate = leaves[i].estimate;
@@ -803,26 +822,29 @@ Json::Value Optimizer::optimize(const Json::Value &logical_plan) const {
       for (std::size_t mask = 1; mask < state_count; ++mask) {
         if (static_cast<std::size_t>(__builtin_popcountll(mask)) != size)
           continue;
-        std::optional<Candidate> chosen;
+        std::optional<optimizer_detail::Candidate> chosen;
         auto consider = [&](std::size_t left_mask, std::size_t right_index,
                             bool allow_cross) {
           if (!best[left_mask])
             return;
-          Names combined = best[left_mask]->relations;
+          optimizer_detail::Names combined = best[left_mask]->relations;
           combined.insert(leaves[right_index].relations.begin(),
                           leaves[right_index].relations.end());
           std::vector<Json::Value> crossing;
           for (const Json::Value &predicate : predicates) {
-            Names refs;
-            condition_references(predicate, refs);
-            if (!refs.empty() && contains_all(combined, refs) &&
-                !contains_all(best[left_mask]->relations, refs) &&
-                !contains_all(leaves[right_index].relations, refs))
+            optimizer_detail::Names refs;
+            optimizer_detail::condition_references(predicate, refs);
+            if (!refs.empty() &&
+                optimizer_detail::contains_all(combined, refs) &&
+                !optimizer_detail::contains_all(best[left_mask]->relations,
+                                                refs) &&
+                !optimizer_detail::contains_all(leaves[right_index].relations,
+                                                refs))
               crossing.push_back(predicate);
           }
           if (crossing.empty() && !allow_cross)
             return;
-          Json::Value condition = join_terms(crossing);
+          Json::Value condition = optimizer_detail::join_terms(crossing);
           Json::Value logical(Json::objectValue);
           logical["op"] = crossing.empty() ? "cross" : "join";
           logical["left"] = best[left_mask]->logical;
@@ -835,28 +857,36 @@ Json::Value Optimizer::optimize(const Json::Value &logical_plan) const {
           } catch (const std::exception &) {
             return;
           }
-          RelationEstimate estimate{estimated_size(annotated, "est_rows"),
-                                    estimated_size(annotated, "est_pages"),
-                                    annotated["est_width"].asDouble()};
+          RelationEstimate estimate{
+              optimizer_detail::estimated_size(annotated, "est_rows"),
+              optimizer_detail::estimated_size(annotated, "est_pages"),
+              annotated["est_width"].asDouble()};
 
-          const Names left_relations = best[left_mask]->relations;
-          const Names right_relations = leaves[right_index].relations;
-          const bool equality = !crossing.empty() &&
+          const optimizer_detail::Names left_relations =
+              best[left_mask]->relations;
+          const optimizer_detail::Names right_relations =
+              leaves[right_index].relations;
+          const bool equality =
+              !crossing.empty() &&
               std::all_of(crossing.begin(), crossing.end(), [&](const auto &p) {
-                return is_equality_condition(p, left_relations, right_relations);
+                return optimizer_detail::is_equality_condition(
+                    p, left_relations, right_relations);
               });
-          struct Choice { std::size_t cost; std::string op; };
+          struct Choice {
+            std::size_t cost;
+            std::string op;
+          };
           std::vector<Choice> choices;
           try {
-            choices.push_back({costs.nested_loop_join(
-                                   best[left_mask]->estimate.num_pages,
-                                   leaves[right_index].estimate.num_pages),
-                               "nested_loop_join"});
+            choices.push_back(
+                {costs.nested_loop_join(best[left_mask]->estimate.num_pages,
+                                        leaves[right_index].estimate.num_pages),
+                 "nested_loop_join"});
             if (equality) {
-              choices.push_back({costs.hash_join(
-                                     best[left_mask]->estimate.num_pages,
-                                     leaves[right_index].estimate.num_pages),
-                                 "hash_join"});
+              choices.push_back(
+                  {costs.hash_join(best[left_mask]->estimate.num_pages,
+                                   leaves[right_index].estimate.num_pages),
+                   "hash_join"});
               choices.push_back({costs.sort_merge_join(
                                      best[left_mask]->estimate.num_pages,
                                      leaves[right_index].estimate.num_pages),
@@ -866,18 +896,22 @@ Json::Value Optimizer::optimize(const Json::Value &logical_plan) const {
             return;
           }
           for (const Choice &choice : choices) {
-            const std::size_t prefix_cost = size == 2 ? 0 : best[left_mask]->cost;
-            if (choice.cost > std::numeric_limits<std::size_t>::max() - prefix_cost)
+            const std::size_t prefix_cost =
+                size == 2 ? 0 : best[left_mask]->cost;
+            if (choice.cost >
+                std::numeric_limits<std::size_t>::max() - prefix_cost)
               continue;
-            Candidate candidate;
+            optimizer_detail::Candidate candidate;
             candidate.logical = logical;
             candidate.estimate = estimate;
             candidate.cost = prefix_cost + choice.cost;
             candidate.relations = combined;
-            candidate.physical = make_physical(
+            candidate.physical = optimizer_detail::make_physical(
                 choice.op, best[left_mask]->physical,
                 leaves[right_index].physical,
-                crossing.empty() ? unconditional_join_predicate() : condition);
+                crossing.empty()
+                    ? optimizer_detail::unconditional_join_predicate()
+                    : condition);
             if (!chosen || candidate.cost < chosen->cost)
               chosen = std::move(candidate);
           }
@@ -892,7 +926,8 @@ Json::Value Optimizer::optimize(const Json::Value &logical_plan) const {
             consider(left_mask, right_index, false);
         }
         if (!chosen) {
-          for (std::size_t right_index = 0; right_index < count; ++right_index) {
+          for (std::size_t right_index = 0; right_index < count;
+               ++right_index) {
             const std::size_t right_mask = std::size_t{1} << right_index;
             if ((mask & right_mask) == 0)
               continue;
@@ -905,24 +940,48 @@ Json::Value Optimizer::optimize(const Json::Value &logical_plan) const {
       }
     }
 
+    if (dp_rows) {
+      for (std::size_t mask = 1; mask < state_count; ++mask) {
+        Json::Value row(Json::objectValue);
+        row["subset"] = Json::Value(Json::arrayValue);
+        for (std::size_t i = 0; i < count; ++i)
+          if (mask & (std::size_t{1} << i))
+            for (const auto &name : leaves[i].relations)
+              row["subset"].append(name);
+        if (best[mask]) {
+          row["plan"] = best[mask]->physical;
+          row["cost"] = Json::UInt64(best[mask]->cost);
+          row["rows"] = Json::UInt64(best[mask]->estimate.num_tuples);
+          row["pages"] = Json::UInt64(best[mask]->estimate.num_pages);
+        }
+        dp_rows->append(std::move(row));
+      }
+    }
     const std::size_t full = state_count - 1;
     if (!best[full])
-      throw std::invalid_argument("No executable join plan could be estimated!");
+      throw std::invalid_argument(
+          "No executable join plan could be estimated!");
     Json::Value physical = best[full]->physical;
     if (!constant_predicates.empty()) {
-      Json::Value filter = unary("filter", std::move(physical));
-      filter["condition"] = join_terms(constant_predicates);
+      Json::Value filter =
+          optimizer_detail::unary("filter", std::move(physical));
+      filter["condition"] = optimizer_detail::join_terms(constant_predicates);
       physical = std::move(filter);
     }
     return physical;
   };
 
-  Json::Value rewritten =
-      remove_noop_projects(rewrite(logical_plan, catalog_), catalog_);
-  Names required;
-  collect_required(rewritten, required);
-  rewritten = push_projections(std::move(rewritten), catalog_, required);
-  rewritten = remove_noop_projects(std::move(rewritten), catalog_);
+  Json::Value rewritten = optimizer_detail::remove_noop_projects(
+      optimizer_detail::rewrite(logical_plan, catalog_), catalog_);
+  // A removed no-op projection can still define the public result columns.
+  // Preserve them even when only a subset appears in predicates or sort keys.
+  const auto outputs = optimizer_detail::output_columns(rewritten, catalog_);
+  optimizer_detail::Names required(outputs.begin(), outputs.end());
+  optimizer_detail::collect_required(rewritten, required);
+  rewritten = optimizer_detail::push_projections(std::move(rewritten), catalog_,
+                                                 required);
+  rewritten =
+      optimizer_detail::remove_noop_projects(std::move(rewritten), catalog_);
   (void)estimator.estimate(rewritten);
   return optimize_tree(rewritten);
 }

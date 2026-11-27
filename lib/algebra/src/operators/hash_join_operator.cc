@@ -17,7 +17,7 @@
 #include <utility>
 
 namespace vql::algebra {
-namespace {
+
 constexpr std::size_t PAGE_SIZE = 4096;
 constexpr std::size_t LINK_SIZE = 8;
 constexpr std::size_t ENTRY_HEADER = LINK_SIZE + 2;
@@ -25,14 +25,14 @@ constexpr std::size_t BUCKETS = PAGE_SIZE / LINK_SIZE;
 constexpr std::uint64_t PARTITION_SEED = 14695981039346656037ULL;
 constexpr std::uint64_t TABLE_SEED = 7809847782465536322ULL;
 
-std::uint64_t read_link(const Page &page, std::size_t offset) {
+static std::uint64_t read_link(const Page &page, std::size_t offset) {
   return storage::help_me_god::read_u32(page, offset) |
          (static_cast<std::uint64_t>(
               storage::help_me_god::read_u32(page, offset + 4))
           << 32);
 }
 
-void write_link(Page &page, std::size_t offset, std::uint64_t value) {
+static void write_link(Page &page, std::size_t offset, std::uint64_t value) {
   storage::help_me_god::write_u32(page, offset,
                                   static_cast<std::uint32_t>(value));
   storage::help_me_god::write_u32(page, offset + 4,
@@ -93,7 +93,6 @@ private:
   std::size_t file_id_;
   std::unique_ptr<storage::TempFileReader> reader_;
 };
-} // namespace
 
 HashJoinOperator::HashJoinOperator(std::unique_ptr<Operator> left,
                                    std::unique_ptr<Operator> right,
@@ -107,12 +106,14 @@ HashJoinOperator::HashJoinOperator(std::unique_ptr<Operator> left,
   if (keys_.empty())
     throw std::invalid_argument("HashJoin requires an equality key!");
   if (workspace_frames_ < 3)
-    throw std::invalid_argument("HashJoin requires at least three workspace frames!");
+    throw std::invalid_argument(
+        "HashJoin requires at least three workspace frames!");
   if (workspace_frames_ - 2 >
       std::numeric_limits<std::uint64_t>::max() / PAGE_SIZE)
     throw std::invalid_argument("HashJoin workspace is too large to address!");
   for (const Key &key : keys_)
-    if (key.left >= left_->schema().size() || key.right >= right_->schema().size())
+    if (key.left >= left_->schema().size() ||
+        key.right >= right_->schema().size())
       throw std::out_of_range("HashJoin key position is out of range!");
   schema_ = concat_schemas(left_->schema(), right_->schema());
 }
@@ -122,7 +123,8 @@ HashJoinOperator::~HashJoinOperator() {
     try {
       close();
     } catch (...) {
-      // Explicit close reports errors and can be retried; destruction cannot throw.
+      // Explicit close reports errors and can be retried; destruction cannot
+      // throw.
     }
   }
 }
@@ -141,7 +143,8 @@ void HashJoinOperator::open() {
   for (std::size_t i = 0; i < schema_.size(); ++i)
     for (std::size_t j = 0; j < i; ++j)
       if (schema_[i].name == schema_[j].name)
-        throw std::invalid_argument("HashJoin schema contains duplicate names!");
+        throw std::invalid_argument(
+            "HashJoin schema contains duplicate names!");
 
   partitions_.resize(workspace_frames_ - 1);
   for (Partition &partition : partitions_) {
@@ -188,11 +191,13 @@ void HashJoinOperator::append_partition(const Tuple &tuple, bool left_side) {
     const Schema &schema = left_side ? left_->schema() : right_->schema();
     const std::size_t size = switcher::encoded_size(tuple, schema);
     if (size > PAGE_SIZE - 4)
-      throw std::length_error("HashJoin input exceeds a temporary record page!");
+      throw std::length_error(
+          "HashJoin input exceeds a temporary record page!");
     Partition &partition =
-        partitions_[hash_key(tuple, left_side, PARTITION_SEED) % partitions_.size()];
+        partitions_[hash_key(tuple, left_side, PARTITION_SEED) %
+                    partitions_.size()];
     storage::TempFile writer(buffer_pool_,
-                              *(left_side ? partition.left : partition.right));
+                             *(left_side ? partition.left : partition.right));
     if (const auto record = tuple.encoded_record()) {
       writer.append(*record);
     } else {
@@ -218,9 +223,10 @@ void HashJoinOperator::append_partition(const Tuple &tuple, bool left_side) {
 }
 
 std::uint64_t HashJoinOperator::hash_key(const Tuple &tuple, bool left_side,
-                                        std::uint64_t seed) const {
-  // Fixed FNV-1a seeds make partitioning repeatable. Type tags and string lengths
-  // separate composite-key fields; different seeds are used for partition/build.
+                                         std::uint64_t seed) const {
+  // Fixed FNV-1a seeds make partitioning repeatable. Type tags and string
+  // lengths separate composite-key fields; different seeds are used for
+  // partition/build.
   std::uint64_t hash = seed;
   const auto mix = [&](std::uint8_t byte) {
     hash ^= byte;
@@ -262,8 +268,8 @@ bool HashJoinOperator::prepare_partition() {
       start_fallback(partition);
     } else {
       create_output_page();
-      probe_reader_ =
-          std::make_unique<storage::TempFileReader>(buffer_pool_, *partition.right);
+      probe_reader_ = std::make_unique<storage::TempFileReader>(
+          buffer_pool_, *partition.right);
     }
     return true;
   }
@@ -311,12 +317,14 @@ bool HashJoinOperator::insert_record(std::span<const char> record) {
                                   static_cast<std::uint16_t>(record.size()));
   std::copy(record.begin(), record.end(), page.begin() + offset + ENTRY_HEADER);
   storage::help_me_god::write_u16(
-      page, 0, static_cast<std::uint16_t>(offset + ENTRY_HEADER + record.size()));
+      page, 0,
+      static_cast<std::uint16_t>(offset + ENTRY_HEADER + record.size()));
   write_link(*table_pages_[0], bucket * LINK_SIZE, address);
   return true;
 }
 
-HashJoinOperator::Entry HashJoinOperator::entry_at(std::uint64_t address) const {
+HashJoinOperator::Entry
+HashJoinOperator::entry_at(std::uint64_t address) const {
   const auto page_id = address / PAGE_SIZE;
   const auto offset = static_cast<std::size_t>(address % PAGE_SIZE);
   if (page_id == 0 || page_id >= table_pages_.size())
@@ -393,7 +401,7 @@ std::optional<Tuple> HashJoinOperator::next() {
 }
 
 bool HashJoinOperator::matching_keys(std::span<const char> left,
-                                      std::span<const char> right) {
+                                     std::span<const char> right) {
   ++counter_.comparisons;
   const Tuple build(left_->schema(), left);
   const Tuple probe(right_->schema(), right);
@@ -407,29 +415,32 @@ bool HashJoinOperator::fallback_condition(const Tuple &candidate) {
   ++counter_.comparisons;
   const auto right_start = left_->schema().size();
   for (const Key &key : keys_)
-    if (compare_values(candidate[key.left], candidate[right_start + key.right]) != 0)
+    if (compare_values(candidate[key.left],
+                       candidate[right_start + key.right]) != 0)
       return false;
   return true;
 }
 
 Tuple HashJoinOperator::emit_match(std::span<const char> left,
-                                    std::span<const char> right) {
+                                   std::span<const char> right) {
   if (left.size() > output_page_->size() ||
       right.size() > output_page_->size() - left.size())
-    throw std::length_error("HashJoin match exceeds its 4096-byte output page!");
+    throw std::length_error(
+        "HashJoin match exceeds its 4096-byte output page!");
   std::copy(left.begin(), left.end(), output_page_->begin());
   std::copy(right.begin(), right.end(), output_page_->begin() + left.size());
   output_dirty_ = true;
-  return Tuple(schema_, std::span<const char>(*output_page_)
-                            .first(left.size() + right.size()));
+  return Tuple(
+      schema_,
+      std::span<const char>(*output_page_).first(left.size() + right.size()));
 }
 
 void HashJoinOperator::start_fallback(Partition &partition) {
   fallback_ = std::make_unique<JoinOperator>(
       std::make_unique<PartitionSource>(buffer_pool_, *partition.left,
-                                         left_->schema()),
+                                        left_->schema()),
       std::make_unique<PartitionSource>(buffer_pool_, *partition.right,
-                                         right_->schema()),
+                                        right_->schema()),
       [this](const Tuple &tuple) { return fallback_condition(tuple); },
       buffer_pool_, workspace_frames_);
   fallback_->open();
@@ -576,7 +587,8 @@ void HashJoinOperator::release_output_page() {
 
 std::size_t HashJoinOperator::create_temp_file() {
   std::string path =
-      (std::filesystem::temp_directory_path() / "vql-hash-join-XXXXXX").string();
+      (std::filesystem::temp_directory_path() / "vql-hash-join-XXXXXX")
+          .string();
   const int fd = ::mkstemp(path.data());
   if (fd == -1)
     throw std::system_error(errno, std::generic_category(), "mkstemp");

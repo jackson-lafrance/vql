@@ -12,10 +12,10 @@
 #include <utility>
 
 namespace vql::algebra {
-namespace {
+
 using OwnedValue = std::variant<std::int32_t, std::string>;
 
-int compare_owned(const OwnedValue &left, const OwnedValue &right) {
+static int compare_owned(const OwnedValue &left, const OwnedValue &right) {
   if (left.index() != right.index())
     throw std::logic_error("GROUP BY compared values of different types!");
   if (std::holds_alternative<std::int32_t>(left)) {
@@ -23,12 +23,13 @@ int compare_owned(const OwnedValue &left, const OwnedValue &right) {
     const auto right_int = std::get<std::int32_t>(right);
     return left_int < right_int ? -1 : left_int > right_int ? 1 : 0;
   }
-  const int result = std::get<std::string>(left).compare(
-      std::get<std::string>(right));
+  const int result =
+      std::get<std::string>(left).compare(std::get<std::string>(right));
   return result < 0 ? -1 : result > 0 ? 1 : 0;
 }
 
-std::string function_name(GroupbyOperator::Aggregate::Function function) {
+static std::string
+function_name(GroupbyOperator::Aggregate::Function function) {
   switch (function) {
   case GroupbyOperator::Aggregate::Function::COUNT:
     return "count";
@@ -44,13 +45,13 @@ std::string function_name(GroupbyOperator::Aggregate::Function function) {
   throw std::invalid_argument("Invalid GROUP BY aggregate function!");
 }
 
-void append_int(std::vector<char> &record, std::int32_t value) {
+static void append_int(std::vector<char> &record, std::int32_t value) {
   const std::uint32_t bits = std::bit_cast<std::uint32_t>(value);
   for (unsigned shift = 0; shift < 32; shift += 8)
     record.push_back(static_cast<char>((bits >> shift) & 0xFF));
 }
 
-void append_varchar(std::vector<char> &record, std::string_view value) {
+static void append_varchar(std::vector<char> &record, std::string_view value) {
   if (value.size() > std::numeric_limits<std::uint16_t>::max())
     throw std::length_error("GROUP BY output VARCHAR is too long!");
   const auto length = static_cast<std::uint16_t>(value.size());
@@ -58,12 +59,12 @@ void append_varchar(std::vector<char> &record, std::string_view value) {
   record.push_back(static_cast<char>((length >> 8) & 0xFF));
   record.insert(record.end(), value.begin(), value.end());
 }
-} // namespace
 
-SortGroupbyOperator::SortGroupbyOperator(
-    std::unique_ptr<Operator> input, storage::BufferPool &buffer_pool,
-    std::size_t workspace_frames, std::vector<std::string> key_names,
-    std::vector<Aggregate> aggregates)
+SortGroupbyOperator::SortGroupbyOperator(std::unique_ptr<Operator> input,
+                                         storage::BufferPool &buffer_pool,
+                                         std::size_t workspace_frames,
+                                         std::vector<std::string> key_names,
+                                         std::vector<Aggregate> aggregates)
     : buffer_pool_(buffer_pool), workspace_frames_(workspace_frames),
       key_names_(std::move(key_names)), aggregates_(std::move(aggregates)) {
   if (!input)
@@ -108,9 +109,8 @@ SortGroupbyOperator::SortGroupbyOperator(
 
     const std::string default_name =
         function + "_" + (aggregate.column == "*" ? "star" : aggregate.column);
-    const std::string output_name = aggregate.output_name.empty()
-                                        ? default_name
-                                        : aggregate.output_name;
+    const std::string output_name =
+        aggregate.output_name.empty() ? default_name : aggregate.output_name;
     Type output_type(DataType::INT);
     if (aggregate.function == Aggregate::Function::AVG)
       output_type = Type(DataType::VARCHAR, 16);
@@ -166,15 +166,15 @@ SortGroupbyOperator::key_values(const Tuple &tuple) const {
   return values;
 }
 
-bool SortGroupbyOperator::same_key(
-    const Tuple &tuple, const std::vector<OwnedValue> &key) {
+bool SortGroupbyOperator::same_key(const Tuple &tuple,
+                                   const std::vector<OwnedValue> &key) {
   for (std::size_t i = 0; i < key_positions_.size(); ++i) {
     ++counter_.comparisons;
     const Value value = tuple.value_at(key_positions_[i]);
-    const OwnedValue current = std::holds_alternative<std::int32_t>(value)
-                                   ? OwnedValue(std::get<std::int32_t>(value))
-                                   : OwnedValue(std::string(
-                                         std::get<std::string_view>(value)));
+    const OwnedValue current =
+        std::holds_alternative<std::int32_t>(value)
+            ? OwnedValue(std::get<std::int32_t>(value))
+            : OwnedValue(std::string(std::get<std::string_view>(value)));
     if (compare_owned(current, key[i]) != 0)
       return false;
   }
@@ -199,10 +199,10 @@ void SortGroupbyOperator::update_aggregates(
       continue;
     }
 
-    OwnedValue candidate = std::holds_alternative<std::int32_t>(value)
-                               ? OwnedValue(std::get<std::int32_t>(value))
-                               : OwnedValue(std::string(
-                                     std::get<std::string_view>(value)));
+    OwnedValue candidate =
+        std::holds_alternative<std::int32_t>(value)
+            ? OwnedValue(std::get<std::int32_t>(value))
+            : OwnedValue(std::string(std::get<std::string_view>(value)));
     if (!state.initialized ||
         (aggregate.function == Aggregate::Function::MIN &&
          compare_owned(candidate, state.value) < 0) ||
@@ -241,8 +241,8 @@ Tuple SortGroupbyOperator::finish_group(
       append_int(output_record_, static_cast<std::int32_t>(state.sum));
       break;
     case Aggregate::Function::AVG: {
-      const double average = static_cast<double>(state.sum) /
-                             static_cast<double>(state.count);
+      const double average =
+          static_cast<double>(state.sum) / static_cast<double>(state.count);
       std::ostringstream formatted;
       formatted << std::fixed << std::setprecision(4) << average;
       const std::string text = formatted.str();

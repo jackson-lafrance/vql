@@ -17,11 +17,11 @@
 #include <utility>
 
 namespace vql::algebra {
-namespace {
+
 constexpr std::size_t kGroupBatchBudget = 4096;
 
-int compare_owned(const std::variant<std::int32_t, std::string> &left,
-                  const std::variant<std::int32_t, std::string> &right) {
+static int compare_owned(const std::variant<std::int32_t, std::string> &left,
+                         const std::variant<std::int32_t, std::string> &right) {
   if (left.index() != right.index())
     throw std::logic_error("Hash GROUP BY compared different value types!");
   if (std::holds_alternative<std::int32_t>(left)) {
@@ -29,12 +29,13 @@ int compare_owned(const std::variant<std::int32_t, std::string> &left,
     const auto b = std::get<std::int32_t>(right);
     return a < b ? -1 : a > b ? 1 : 0;
   }
-  const int result = std::get<std::string>(left).compare(
-      std::get<std::string>(right));
+  const int result =
+      std::get<std::string>(left).compare(std::get<std::string>(right));
   return result < 0 ? -1 : result > 0 ? 1 : 0;
 }
 
-std::string function_name(GroupbyOperator::Aggregate::Function function) {
+static std::string
+function_name(GroupbyOperator::Aggregate::Function function) {
   switch (function) {
   case GroupbyOperator::Aggregate::Function::COUNT:
     return "count";
@@ -50,13 +51,13 @@ std::string function_name(GroupbyOperator::Aggregate::Function function) {
   throw std::invalid_argument("Invalid GROUP BY aggregate function!");
 }
 
-void append_int(std::vector<char> &record, std::int32_t value) {
+static void append_int(std::vector<char> &record, std::int32_t value) {
   const std::uint32_t bits = std::bit_cast<std::uint32_t>(value);
   for (unsigned shift = 0; shift < 32; shift += 8)
     record.push_back(static_cast<char>((bits >> shift) & 0xFF));
 }
 
-void append_varchar(std::vector<char> &record, std::string_view value) {
+static void append_varchar(std::vector<char> &record, std::string_view value) {
   if (value.size() > std::numeric_limits<std::uint16_t>::max())
     throw std::length_error("Hash GROUP BY output VARCHAR is too long!");
   const auto length = static_cast<std::uint16_t>(value.size());
@@ -65,17 +66,17 @@ void append_varchar(std::vector<char> &record, std::string_view value) {
   record.insert(record.end(), value.begin(), value.end());
 }
 
-void append_key_int(std::string &key, std::int32_t value) {
+static void append_key_int(std::string &key, std::int32_t value) {
   const std::uint32_t bits = std::bit_cast<std::uint32_t>(value);
   for (unsigned shift = 0; shift < 32; shift += 8)
     key.push_back(static_cast<char>((bits >> shift) & 0xFF));
 }
-} // namespace
 
-HashGroupbyOperator::HashGroupbyOperator(
-    std::unique_ptr<Operator> input, storage::BufferPool &buffer_pool,
-    std::size_t partition_count, std::vector<std::string> key_names,
-    std::vector<Aggregate> aggregates)
+HashGroupbyOperator::HashGroupbyOperator(std::unique_ptr<Operator> input,
+                                         storage::BufferPool &buffer_pool,
+                                         std::size_t partition_count,
+                                         std::vector<std::string> key_names,
+                                         std::vector<Aggregate> aggregates)
     : input_(std::move(input)), buffer_pool_(buffer_pool),
       partition_count_(partition_count), key_names_(std::move(key_names)),
       aggregates_(std::move(aggregates)) {
@@ -116,9 +117,8 @@ HashGroupbyOperator::HashGroupbyOperator(
 
     const std::string default_name =
         function + "_" + (aggregate.column == "*" ? "star" : aggregate.column);
-    const std::string output_name = aggregate.output_name.empty()
-                                        ? default_name
-                                        : aggregate.output_name;
+    const std::string output_name =
+        aggregate.output_name.empty() ? default_name : aggregate.output_name;
     Type output_type(DataType::INT);
     if (aggregate.function == Aggregate::Function::AVG)
       output_type = Type(DataType::VARCHAR, 16);
@@ -206,7 +206,8 @@ void HashGroupbyOperator::partition_input() {
     if (size > 4092)
       throw std::length_error("GROUP BY tuple is too large for a temp page!");
     const std::string key = make_group_key(*tuple);
-    const std::size_t partition = std::hash<std::string>{}(key) % partition_count_;
+    const std::size_t partition =
+        std::hash<std::string>{}(key) % partition_count_;
 
     const auto before = buffer_pool_.stats();
     try {
@@ -363,8 +364,9 @@ HashGroupbyOperator::key_values(const Tuple &tuple) const {
   return keys;
 }
 
-std::size_t HashGroupbyOperator::estimate_group_bytes(
-    const Tuple &tuple, std::string_view encoded_key) const {
+std::size_t
+HashGroupbyOperator::estimate_group_bytes(const Tuple &tuple,
+                                          std::string_view encoded_key) const {
   std::size_t bytes = 128 + encoded_key.size() +
                       key_positions_.size() * sizeof(OwnedValue) +
                       aggregates_.size() * sizeof(AggregateState);
@@ -398,8 +400,10 @@ void HashGroupbyOperator::update_aggregates(const Tuple &tuple,
     if (aggregate.function == Aggregate::Function::SUM ||
         aggregate.function == Aggregate::Function::AVG) {
       const std::int64_t add = std::get<std::int32_t>(value);
-      if ((add > 0 && state.sum > std::numeric_limits<std::int64_t>::max() - add) ||
-          (add < 0 && state.sum < std::numeric_limits<std::int64_t>::min() - add))
+      if ((add > 0 &&
+           state.sum > std::numeric_limits<std::int64_t>::max() - add) ||
+          (add < 0 &&
+           state.sum < std::numeric_limits<std::int64_t>::min() - add))
         throw std::overflow_error("SUM/AVG accumulator overflow!");
       state.sum += add;
       if (aggregate.function == Aggregate::Function::AVG) {
@@ -410,10 +414,10 @@ void HashGroupbyOperator::update_aggregates(const Tuple &tuple,
       continue;
     }
 
-    OwnedValue candidate = std::holds_alternative<std::int32_t>(value)
-                               ? OwnedValue(std::get<std::int32_t>(value))
-                               : OwnedValue(std::string(
-                                     std::get<std::string_view>(value)));
+    OwnedValue candidate =
+        std::holds_alternative<std::int32_t>(value)
+            ? OwnedValue(std::get<std::int32_t>(value))
+            : OwnedValue(std::string(std::get<std::string_view>(value)));
     if (!state.initialized ||
         (aggregate.function == Aggregate::Function::MIN &&
          compare_owned(candidate, state.value) < 0) ||
@@ -450,8 +454,8 @@ Tuple HashGroupbyOperator::finish_group(const GroupState &group) {
       append_int(output_record_, static_cast<std::int32_t>(state.sum));
       break;
     case Aggregate::Function::AVG: {
-      const double average = static_cast<double>(state.sum) /
-                             static_cast<double>(state.count);
+      const double average =
+          static_cast<double>(state.sum) / static_cast<double>(state.count);
       std::ostringstream formatted;
       formatted << std::fixed << std::setprecision(4) << average;
       const std::string text = formatted.str();
@@ -475,7 +479,8 @@ Tuple HashGroupbyOperator::finish_group(const GroupState &group) {
 }
 
 std::optional<Tuple> HashGroupbyOperator::emit_empty_global_group() {
-  if (!key_positions_.empty() || empty_global_emitted_ || counter_.tuples_out != 0)
+  if (!key_positions_.empty() || empty_global_emitted_ ||
+      counter_.tuples_out != 0)
     return std::nullopt;
   empty_global_emitted_ = true;
   GroupState empty;
